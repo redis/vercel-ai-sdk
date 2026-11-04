@@ -601,7 +601,7 @@ export function createRedisAgentMemoryModel(
       return providerMetadata;
     }
     const memories = (context?.includedMemories ?? []).map(memory => {
-      const entry: Record<string, string> = { id: memory.id };
+      const entry: Record<string, string> = { id: memory.memoryId };
       if (memory.memoryType !== undefined) entry.memoryType = memory.memoryType;
       const createdAt = isoTimestamp(memory.createdAt);
       const updatedAt = isoTimestamp(memory.updatedAt);

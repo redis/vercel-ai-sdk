@@ -145,8 +145,7 @@ const memory = createRedisAgentMemory({
 | `namespaceTools` | `false`; exposes namespace administration tools when true |
 | `timeoutMs` | `30000` per HTTP request; must be positive and finite |
 
-Scope accepts `userId`, `sessionId`, `namespaceId`, and the legacy `namespace` label.
-`namespaceId` and `namespace` are mutually exclusive.
+Scope accepts `userId`, `sessionId`, and `namespaceId`.
 Configuration is validated and copied at construction; later mutations of caller-owned objects do not alter factory defaults.
 
 `memory.model(...)` accepts `scope?`, `model?`, `assistantId?`, `historyMode?`, `recording?`, `query?`, `strictReads?`, `includeMemoryProvenance?`, `limits?`, and `onDiagnostic?`.

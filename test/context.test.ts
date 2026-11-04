@@ -91,7 +91,6 @@ describe.each(creators)('withContext via $name', ({ create, fromEnvironment }) =
   it.each([
     ['userId', 'user-1', 'user-2'],
     ['sessionId', 'session-1', 'session-2'],
-    ['namespace', 'personal', 'shared'],
     ['namespaceId', 'notes-1', 'notes-2'],
   ] as const)('preserves initial and derived fixed %s boundaries', async (field, value, conflicting) => {
     for (const parent of [create({ [field]: value }), create().withContext({ [field]: value })]) {
@@ -103,13 +102,9 @@ describe.each(creators)('withContext via $name', ({ create, fromEnvironment }) =
     }
   });
 
-  it('validates merged namespace selectors and newly supplied identifiers before making requests', () => {
+  it('validates newly supplied identifiers before making requests', () => {
     const http = transport();
-    expect(() => create({ namespace: 'legacy' }).withContext({ namespaceId: 'notes-1' })).toThrow();
-    expect(() => create({ namespaceId: 'notes-1' }).withContext({ namespace: 'legacy' })).toThrow();
-    expect(() => create().withContext({ namespace: 'legacy', namespaceId: 'notes-1' })).toThrow();
-    expect(() => create({}, { namespaceTools: true }).withContext({ namespace: 'legacy' })).toThrow();
-    for (const scope of [{ userId: '' }, { sessionId: 'invalid/session' }, { namespaceId: '' }, { namespace: ' ' }]) {
+    for (const scope of [{ userId: '' }, { sessionId: 'invalid/session' }, { namespaceId: '' }]) {
       expect(() => create().withContext(scope)).toThrow();
     }
     expect(http.fetch).not.toHaveBeenCalled();
@@ -154,14 +149,14 @@ describe.each(creators)('withContext via $name', ({ create, fromEnvironment }) =
 
     await run(parent.withContext({ userId: 'user-1' }), 'search_memories');
 
-    expect(http.requests[0]!.request.url).toBe(`${serverURL}/v1/stores/store-1/long-term-memory/search`);
+    expect(http.requests[0]!.request.url).toBe(`${serverURL}/iris/data/v1/agent-memory/stores/store-1/memories/search`);
     expect(http.requests[0]!.request.headers.get('authorization')).toBe(`Bearer ${apiKey}`);
-    expect(http.requests[0]!.body.filter).toEqual({ ownerId: { eq: 'user-1' } });
+    expect(http.requests[0]!.body.filter).toEqual({ op: 'ALL', ownerId: { eq: 'user-1' } });
   });
 
   it('enforces derived scope on tool inputs and returned records', async () => {
     const http = transport({
-      id: 'foreign-memory', text: 'Private.', ownerId: 'user-2',
+      memoryId: 'foreign-memory', text: 'Private.', ownerId: 'user-2',
       createdAt: timestamp, updatedAt: timestamp,
     });
     const scoped = create().withContext({ userId: 'user-1', sessionId: 'session-1' });
@@ -178,7 +173,7 @@ describe.each(creators)('withContext via $name', ({ create, fromEnvironment }) =
     const started = new Promise<void>(resolve => { resolveStarted = resolve; });
     let releaseFirst!: () => void;
     const firstResponse = new Promise<void>(resolve => { releaseFirst = resolve; });
-    const writes: Array<{ ownerId: string; sessionId: string; id: string }> = [];
+    const writes: Array<{ ownerId: string; sessionId: string; memoryId: string }> = [];
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>(async (input, init) => {
       const request = input instanceof Request ? input : new Request(input, init);
       if (request.method === 'GET') {
@@ -188,13 +183,13 @@ describe.each(creators)('withContext via $name', ({ create, fromEnvironment }) =
           await firstResponse;
         }
         return Response.json({
-          id: first ? 'memory-1' : 'memory-2', text: 'Conversation preference.',
+          memoryId: first ? 'memory-1' : 'memory-2', text: 'Conversation preference.',
           ownerId: first ? 'user-1' : 'user-2', createdAt: timestamp, updatedAt: timestamp,
         });
       }
       const { memories } = await request.json() as { memories: typeof writes };
       writes.push(...memories);
-      return Response.json({ created: memories.map(memory => memory.id) }, { status: 201 });
+      return Response.json({ created: memories.map(memory => memory.memoryId) }, { status: 201 });
     }));
     const parent = create();
     const first = parent.withContext({ userId: 'user-1', sessionId: 'session-1' });
@@ -267,6 +262,6 @@ describe.each(creators)('withContext via $name', ({ create, fromEnvironment }) =
     expect(result.finalStep.text).toBe('No saved preferences yet.');
     expect(result.steps).toHaveLength(2);
     expect(http.requests).toHaveLength(1);
-    expect(http.requests[0]!.body.filter).toEqual({ ownerId: { eq: 'user-1' } });
+    expect(http.requests[0]!.body.filter).toEqual({ op: 'ALL', ownerId: { eq: 'user-1' } });
   });
 });

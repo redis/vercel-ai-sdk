@@ -53,19 +53,19 @@ export function createNamespaceTools(
   const tools: ToolSet = {
     list_namespaces: tool({
       description:
-        "List namespace roots or the direct children of a namespace. Reuse nextPageToken to fetch another page. " +
-        "With a fixed namespace configuration, omit filters and pageToken to retrieve only that namespace.",
+        "List namespace roots or the direct children of a namespace. Reuse nextCursor to fetch another page. " +
+        "With a fixed namespace configuration, omit filters and cursor to retrieve only that namespace.",
       inputSchema: z.object({
         parentId: identifier.optional().describe("List direct children; omit to list roots."),
         scope: scopeSchema.optional().describe("Root scope. Cannot be combined with parentId."),
         ownerId: identifier.optional().describe("Owner of PERSONAL roots. Cannot be combined with parentId."),
         limit: z.number().int().min(1).max(1000).optional(),
-        pageToken: z.string().min(1).optional(),
+        cursor: z.string().min(1).optional(),
       }),
       execute: async (input, { abortSignal }) => {
         if (options.namespaceId !== undefined) {
-          if (input.parentId !== undefined || input.scope !== undefined || input.ownerId !== undefined || input.pageToken !== undefined) {
-            throw new RedisAgentMemoryToolError("INVALID_SCOPE", "Omit filters and pageToken when listing a fixed namespace.");
+          if (input.parentId !== undefined || input.scope !== undefined || input.ownerId !== undefined || input.cursor !== undefined) {
+            throw new RedisAgentMemoryToolError("INVALID_SCOPE", "Omit filters and cursor when listing a fixed namespace.");
           }
           return { items: [await assertNamespace(options.namespaceId, abortSignal)] };
         }
@@ -96,7 +96,7 @@ export function createNamespaceTools(
           scope,
           ownerId,
           input.limit,
-          input.pageToken,
+          input.cursor,
           requestOptions(abortSignal),
         );
         for (const namespace of result.items) await assertOwner(namespace, abortSignal);
@@ -192,7 +192,7 @@ export function createNamespaceTools(
         if (namespace.state !== "ACTIVE") throw new RedisAgentMemoryToolError("INVALID_SCOPE", "Cannot move memories into an archived namespace.");
         for (const memoryId of memoryIds) await options.assertMemory(memoryId, abortSignal);
         return client.moveLongTermMemories(
-          { memoryIds, namespaceRef: { namespaceId } },
+          { memoryIds, namespaceId },
           requestOptions(abortSignal),
         );
       },

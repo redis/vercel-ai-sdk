@@ -33,7 +33,7 @@ describe('scoped memory core', () => {
 
   it('restores only a session whose owner and placement match the immutable scope', async () => {
     const getSessionMemory = vi.fn().mockResolvedValue({
-      sessionId: 'session-1', ownerId: 'user-1', namespaceRef: { namespaceId: 'namespace-1' }, events: [],
+      sessionId: 'session-1', ownerId: 'user-1', namespaceId: 'namespace-1', events: [],
     });
     const scoped = createScopedMemory(client({ getSessionMemory } as Partial<AgentMemory>), {
       userId: 'user-1', sessionId: 'session-1', namespaceId: 'namespace-1',
@@ -47,15 +47,15 @@ describe('scoped memory core', () => {
     });
 
     getSessionMemory.mockResolvedValueOnce({
-      sessionId: 'session-1', ownerId: 'another-user', namespaceRef: { namespaceId: 'namespace-1' }, events: [],
+      sessionId: 'session-1', ownerId: 'another-user', namespaceId: 'namespace-1', events: [],
     });
     await expect(scoped.restoreSession()).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
   });
 
   it('searches personal memories with owner and namespace joined by all and validates every result', async () => {
     const searchLongTermMemory = vi.fn().mockResolvedValue({ items: [{
-      id: 'memory-1', text: 'Prefers concise replies.', ownerId: 'user-1',
-      namespaceRef: { namespaceId: 'namespace-1' }, createdAt: timestamp, updatedAt: timestamp,
+      memoryId: 'memory-1', text: 'Prefers concise replies.', ownerId: 'user-1',
+      namespaceId: 'namespace-1', createdAt: timestamp, updatedAt: timestamp,
     }] });
     const scoped = createScopedMemory(client({ searchLongTermMemory } as Partial<AgentMemory>), {
       userId: 'user-1', sessionId: 'current-session', namespaceId: 'namespace-1',
@@ -63,15 +63,15 @@ describe('scoped memory core', () => {
 
     await expect(scoped.searchPersonalMemories('preferences', 5, {
       retries: { strategy: 'none' },
-    })).resolves.toMatchObject({ items: [{ id: 'memory-1' }] });
+    })).resolves.toMatchObject({ items: [{ memoryId: 'memory-1' }] });
     expect(searchLongTermMemory).toHaveBeenCalledWith({
-      text: 'preferences', limit: 5, filterOp: 'all',
-      filter: { ownerId: { eq: 'user-1' }, namespaceRef: { eq: 'namespace-1' } },
+      query: 'preferences', limit: 5,
+      filter: { op: 'ALL', ownerId: { eq: 'user-1' }, namespaceId: { eq: 'namespace-1' } },
     }, { retries: { strategy: 'none' } });
 
     searchLongTermMemory.mockResolvedValueOnce({ items: [{
-      id: 'memory-2', text: 'Foreign.', ownerId: 'another-user',
-      namespaceRef: { namespaceId: 'namespace-1' }, createdAt: timestamp, updatedAt: timestamp,
+      memoryId: 'memory-2', text: 'Foreign.', ownerId: 'another-user',
+      namespaceId: 'namespace-1', createdAt: timestamp, updatedAt: timestamp,
     }] });
     await expect(scoped.searchPersonalMemories('preferences', 5)).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
   });

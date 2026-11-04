@@ -81,10 +81,9 @@ function buildTools(
   } = scoped;
   const assertSession = (sessionId: string, signal?: AbortSignal) => scoped.assertSession(sessionId, { signal });
   const assertMemory = (id: string, signal?: AbortSignal) => scoped.assertMemory(id, { signal });
-  const assertPlacementOwner = (
-    value: { namespace?: string; namespaceRef?: { namespaceId: string } },
-    signal?: AbortSignal,
-  ) => scoped.assertPlacementOwner(value, { signal });
+  const assertPlacementOwner = (value: { namespaceId?: string }, signal?: AbortSignal) => (
+    scoped.assertPlacementOwner(value, { signal })
+  );
   const append = (input: z.infer<typeof s.event>, signal?: AbortSignal, start = false) => (
     scoped.appendSessionEvent(input, { signal, start })
   );
@@ -132,15 +131,15 @@ function buildTools(
       execute: async (input, { abortSignal }) => {
         if (scope.sessionId) {
           if (input.ownerId && scope.userId && input.ownerId !== scope.userId) fail('Cannot override user scope.');
-          await assertSession(scope.sessionId, abortSignal);
-          return { items: [scope.sessionId], total: 1 };
+          const session = await assertSession(scope.sessionId, abortSignal);
+          return { items: [{ sessionId: session.sessionId, ownerId: session.ownerId, namespaceId: session.namespaceId }] };
         }
-        if (scope.namespace !== undefined || scope.namespaceId) fail('The Iris session-list API cannot filter namespaces. Use a known session ID with get_session_memory.');
+        if (scope.namespaceId) fail('The Iris session-list API cannot filter namespaces. Use a known session ID with get_session_memory.');
         if (input.includeAll && (scope.userId || input.ownerId)) fail('includeAll cannot be combined with a user scope or ownerId.');
         const owner = input.ownerId || scope.userId;
         if (!owner && !input.includeAll) fail('Supply ownerId or explicitly set includeAll: true.');
         if (owner) resolveOwner(owner);
-        return client.listSessions(input.limit, input.pageToken, owner, owner ? undefined : true, { signal: abortSignal });
+        return client.listSessions(input.limit, input.cursor, owner, owner ? undefined : true, { signal: abortSignal });
       },
     }),
     create_memories: tool({
@@ -150,18 +149,18 @@ function buildTools(
         const records = memories.map(memory => {
           const sessionId = memory.sessionId ?? scope.sessionId;
           if (scope.sessionId && sessionId !== scope.sessionId) fail('Cannot override session association.');
-          return { ...place(memory), id: globalThis.crypto.randomUUID(), ownerId: resolveOwner(memory.ownerId), sessionId };
+          return { ...place(memory), memoryId: globalThis.crypto.randomUUID(), ownerId: resolveOwner(memory.ownerId), sessionId };
         });
         const checkedNamespaces = new Set<string>();
         for (const record of records) {
-          const namespaceId = record.namespaceRef?.namespaceId;
+          const namespaceId = record.namespaceId;
           if (namespaceId && !checkedNamespaces.has(namespaceId)) {
             await assertPlacementOwner(record, abortSignal);
             checkedNamespaces.add(namespaceId);
           }
         }
         const result = await client.bulkCreateLongTermMemories({ memories: records }, { signal: abortSignal });
-        return { ...result, memoryIds: records.map(record => record.id) };
+        return { ...result, memoryIds: records.map(record => record.memoryId) };
       },
     }),
     get_memory: tool({
@@ -169,7 +168,7 @@ function buildTools(
       execute: ({ memoryId }, { abortSignal }) => assertMemory(memoryId, abortSignal),
     }),
     search_memories: tool({
-      description: 'Search durable memories semantically or list with filters. Results are items plus optional nextPageToken. Recall spans conversations. Scoped searches require filterOp all.',
+      description: 'Search durable memories semantically or list with filters. Results are items plus optional nextCursor. Recall spans conversations. Scoped searches require filter.op ALL.',
       inputSchema: s.search,
       execute: async (input, { abortSignal }) => {
         const filter: LongTermMemoryFilter = { ...input.filter, createdAt: input.filter?.createdAt

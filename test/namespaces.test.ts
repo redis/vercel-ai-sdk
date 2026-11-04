@@ -8,7 +8,7 @@ const now = new Date('2026-09-25T12:00:00Z');
 function namespace(overrides: Partial<Namespace> = {}): Namespace {
   return {
     namespaceId: 'root-1', rootId: 'root-1', name: 'My notes', path: 'My notes',
-    ownerId: 'user-1', scope: 'PERSONAL', state: 'ACTIVE', revision: 1,
+    ownerId: 'user-1', scope: 'PERSONAL', state: 'ACTIVE', revision: '1',
     createdAt: now, updatedAt: now, ...overrides,
   };
 }
@@ -79,10 +79,10 @@ describe('namespace scope enforcement', () => {
 
   it('injects personal root filters and preserves pagination', async () => {
     const { tools, client } = setup({ ownerId: 'user-1' });
-    client.listNamespaces.mockResolvedValueOnce({ items: [namespace()], nextPageToken: 'next' } as any);
-    const result = await run(tools, 'list_namespaces', { limit: 20, pageToken: 'previous' });
+    client.listNamespaces.mockResolvedValueOnce({ items: [namespace()], nextCursor: 'next' } as any);
+    const result = await run(tools, 'list_namespaces', { limit: 20, cursor: 'previous' });
     expect(client.listNamespaces).toHaveBeenCalledWith(undefined, 'PERSONAL', 'user-1', 20, 'previous', { signal: undefined });
-    expect(result.nextPageToken).toBe('next');
+    expect(result.nextCursor).toBe('next');
   });
 
   it('lists children without forbidden root filters after verifying their parent', async () => {
@@ -145,7 +145,7 @@ describe('namespace scope enforcement', () => {
 
   it.each([
     ['list_namespaces', { parentId: 'root-1' }],
-    ['list_namespaces', { pageToken: 'next' }],
+    ['list_namespaces', { cursor: 'next' }],
     ['create_namespace', { name: 'Child', parentId: 'root-1' }],
     ['get_namespace', { namespaceId: 'other' }],
     ['update_namespace', { namespaceId: 'other', name: 'Changed' }],
@@ -181,7 +181,7 @@ describe('namespace scope enforcement', () => {
 
   it('preserves partial move failures rather than claiming the whole batch succeeded', async () => {
     const { tools, client, assertMemory } = setup({ ownerId: 'user-1' });
-    const response = { moved: ['memory-1'], errors: [{ id: 'memory-2', error: 'Concurrent update' }] };
+    const response = { moved: ['memory-1'], errors: [{ memoryId: 'memory-2', error: 'Concurrent update' }] };
     client.moveLongTermMemories.mockResolvedValueOnce(response);
     const result = await run(tools, 'move_memories', {
       namespaceId: 'root-1', memoryIds: ['memory-1', 'memory-2'],
@@ -189,7 +189,7 @@ describe('namespace scope enforcement', () => {
     expect(result).toEqual(response);
     expect(assertMemory).toHaveBeenCalledTimes(2);
     expect(client.moveLongTermMemories).toHaveBeenCalledWith({
-      memoryIds: ['memory-1', 'memory-2'], namespaceRef: { namespaceId: 'root-1' },
+      memoryIds: ['memory-1', 'memory-2'], namespaceId: 'root-1',
     }, { signal: undefined });
   });
 

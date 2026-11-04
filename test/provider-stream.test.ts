@@ -31,14 +31,14 @@ function setupTransport(options: { holdAssistant?: boolean; failAssistant?: bool
     const text = await request.clone().text();
     const body = text ? JSON.parse(text) as JsonRecord : undefined;
     requests.push({ request, body });
-    if (request.url.endsWith('/long-term-memory/search')) return Response.json({ items: [{
-      id: 'memory-1', text: 'Remembered.', ownerId: 'user-1', createdAt: timestamp, updatedAt: timestamp,
+    if (request.url.endsWith('/memories/search')) return Response.json({ items: [{
+      memoryId: 'memory-1', text: 'Remembered.', ownerId: 'user-1', createdAt: timestamp, updatedAt: timestamp,
     }] });
     if (request.method === 'GET') return Response.json({ sessionId: 'session-1', ownerId: 'user-1', events: [] });
     if (body?.role === 'ASSISTANT' && options.holdAssistant) await assistantGate;
     if (body?.role === 'ASSISTANT' && options.failAssistant) return Response.json({ title: 'Failed' }, { status: 500 });
     return Response.json({ event: {
-      ...body, eventId: `event-${requests.length}`, createdAt: timestamp, systemTimestamp: timestamp,
+      ...body, sessionId: new URL(request.url).pathname.match(/\/sessions\/([^/]+)\/events$/)?.[1] ?? body?.sessionId, eventId: `event-${requests.length}`, createdAt: timestamp, systemTimestamp: timestamp,
     } }, { status: 201 });
   });
   vi.stubGlobal('fetch', fetch);
@@ -276,7 +276,7 @@ describe('Redis Agent Memory provider streaming', () => {
     const posts: JsonRecord[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = input instanceof Request ? input : new Request(input, init);
-      if (request.url.endsWith('/long-term-memory/search')) return Response.json({ items: [] });
+      if (request.url.endsWith('/memories/search')) return Response.json({ items: [] });
       if (request.method === 'GET') {
         sessionGets += 1;
         return Response.json({
@@ -286,7 +286,7 @@ describe('Redis Agent Memory provider streaming', () => {
       const body = await request.json() as JsonRecord;
       posts.push(body);
       return Response.json({ event: {
-        ...body, eventId: `event-${posts.length}`, createdAt: timestamp, systemTimestamp: timestamp,
+        ...body, sessionId: new URL(request.url).pathname.match(/\/sessions\/([^/]+)\/events$/)?.[1] ?? body?.sessionId, eventId: `event-${posts.length}`, createdAt: timestamp, systemTimestamp: timestamp,
       } }, { status: 201 });
     }));
     let calls = 0;
@@ -365,7 +365,7 @@ describe('Redis Agent Memory provider streaming', () => {
     expect(await result.text).toBe('Final answer.');
     expect(prompts).toHaveLength(2);
     expect(prompts.every(prompt => prompt.split('Remembered.').length === 2)).toBe(true);
-    expect(http.requests.filter(({ request }) => request.url.endsWith('/long-term-memory/search'))).toHaveLength(1);
+    expect(http.requests.filter(({ request }) => request.url.endsWith('/memories/search'))).toHaveLength(1);
     expect(http.requests.filter(({ body }) => body?.role === 'USER')).toHaveLength(1);
     expect(http.requests.filter(({ body }) => body?.role === 'ASSISTANT')).toHaveLength(1);
   });

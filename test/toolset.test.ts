@@ -18,7 +18,7 @@ afterEach(() => {
 
 function memory(overrides: Record<string, unknown> = {}) {
   return {
-    id: 'memory-1', text: 'Prefers concise replies.', ownerId: 'user-1',
+    memoryId: 'memory-1', text: 'Prefers concise replies.', ownerId: 'user-1',
     sessionId: 'older-session', createdAt: timestamp, updatedAt: timestamp, ...overrides,
   };
 }
@@ -33,7 +33,7 @@ function event(overrides: Record<string, unknown> = {}) {
 function namespace(overrides: Record<string, unknown> = {}) {
   return {
     namespaceId: 'root-1', name: 'personal', rootId: 'root-1', ownerId: 'user-1',
-    scope: 'PERSONAL', state: 'ACTIVE', revision: 1, path: '/personal',
+    scope: 'PERSONAL', state: 'ACTIVE', revision: '1', path: '/personal',
     createdAt: timestamp, updatedAt: timestamp, ...overrides,
   };
 }
@@ -48,8 +48,9 @@ function transport(...responses: Array<{ body: unknown; status?: number }>) {
     requests.push({ request, body });
     const response = responses.shift();
     if (!response) throw new Error(`Unexpected HTTP request: ${request.method} ${request.url}`);
+    const created = request.method === 'POST' && /\/(memories|sessions|namespaces|sessions\/[^/]+\/events)$/.test(new URL(request.url).pathname);
     return new Response(JSON.stringify(typeof response.body === 'function' ? response.body(body) : response.body), {
-      status: response.status ?? 200,
+      status: response.status ?? (created ? 201 : 200),
       headers: { 'content-type': 'application/json' },
     });
   });
@@ -130,7 +131,7 @@ describe('RedisAgentMemory toolset', () => {
     await run(makeTools(), 'search_memories', {});
 
     const { request } = http.requests[0]!;
-    expect(request.url).toBe('https://environment.example.test/v1/stores/environment-store/long-term-memory/search');
+    expect(request.url).toBe('https://environment.example.test/iris/data/v1/agent-memory/stores/environment-store/memories/search');
     expect(request.headers.get('authorization')).toBe('Bearer environment-key');
   });
 
@@ -148,9 +149,9 @@ describe('RedisAgentMemory toolset', () => {
     await run(tools, 'search_memories', {});
 
     const { request, body } = http.requests[0]!;
-    expect(request.url).toBe(`${serverURL}/v1/stores/store-1/long-term-memory/search`);
+    expect(request.url).toBe(`${serverURL}/iris/data/v1/agent-memory/stores/store-1/memories/search`);
     expect(request.headers.get('authorization')).toBe(`Bearer ${apiKey}`);
-    expect(body.filter).toEqual({ ownerId: { eq: 'user-1' } });
+    expect(body.filter).toEqual({ op: 'ALL', ownerId: { eq: 'user-1' } });
     const context = await run(tools, 'get_memory_context', {});
     expect(context).toMatchObject({ userId: 'user-1', sessionId: 'session-1' });
     expect(context).not.toHaveProperty('ownerId');
@@ -163,7 +164,7 @@ describe('RedisAgentMemory toolset', () => {
 
     await run(makeTools(undefined, 'store-1', apiKey), 'search_memories', {});
 
-    expect(http.requests[0]!.request.url).toBe('https://gcp-us-east4.memory.redis.io/v1/stores/store-1/long-term-memory/search');
+    expect(http.requests[0]!.request.url).toBe('https://gcp-us-east4.memory.redis.io/iris/data/v1/agent-memory/stores/store-1/memories/search');
   });
 
   it('fails at construction when required connection options are missing', () => {
@@ -196,45 +197,44 @@ describe('RedisAgentMemory toolset', () => {
   });
 
   it('uses SDK HTTP serialization and preserves search pagination and records', async () => {
-    const http = transport({ body: { items: [memory()], nextPageToken: 'next-page' } });
+    const http = transport({ body: { items: [memory()], nextCursor: 'next-page' } });
     const result = await run(toolsWith(http.fetch), 'search_memories', {
-      text: 'communication preferences', limit: 5, pageToken: 'previous-page',
+      query: 'communication preferences', limit: 5, cursor: 'previous-page',
       filter: { createdAt: { gte: '2026-09-01T00:00:00Z' } },
     });
     expect(http.requests).toHaveLength(1);
     const { request, body } = http.requests[0]!;
     expect(request.method).toBe('POST');
-    expect(request.url).toBe(`${serverURL}/v1/stores/store-1/long-term-memory/search`);
+    expect(request.url).toBe(`${serverURL}/iris/data/v1/agent-memory/stores/store-1/memories/search`);
     expect(request.headers.get('authorization')).toBe(`Bearer ${apiKey}`);
     expect(body).toMatchObject({
-      text: 'communication preferences', limit: 5, pageToken: 'previous-page',
+      query: 'communication preferences', limit: 5, cursor: 'previous-page',
       filter: { createdAt: { gte: '2026-09-01T00:00:00.000Z' } },
     });
     expect(result.items).toHaveLength(1);
-    expect(result.items[0]).toMatchObject({ id: 'memory-1', text: 'Prefers concise replies.' });
+    expect(result.items[0]).toMatchObject({ memoryId: 'memory-1', text: 'Prefers concise replies.' });
     expect(new Date(result.items[0].createdAt).toISOString()).toBe(timestamp);
-    expect(result.nextPageToken).toBe('next-page');
+    expect(result.nextCursor).toBe('next-page');
   });
 
   it('maps user scope to the owner filter while retaining memories from other sessions', async () => {
     const http = transport({ body: { items: [memory()] } });
     await run(toolsWith(http.fetch, { userId: 'user-1', sessionId: 'current-session' }),
-      'search_memories', { text: 'preferences', filter: { topics: { in: ['preferences'] } } });
+      'search_memories', { query: 'preferences', filter: { topics: { in: ['preferences'] } } });
     expect(http.requests[0]!.body.filter).toEqual({
-      ownerId: { eq: 'user-1' }, topics: { in: ['preferences'] },
+      op: 'ALL', ownerId: { eq: 'user-1' }, topics: { in: ['preferences'] },
     });
-    expect(http.requests[0]!.body.filterOp ?? 'all').toBe('all');
   });
 
   it('uses the scoped user ID as the owner when listing sessions', async () => {
-    const http = transport({ body: { items: ['session-1'], total: 1 } });
+    const http = transport({ body: { items: [{ sessionId: 'session-1', ownerId: 'user-1' }] } });
     const tools = toolsWith(http.fetch, { userId: 'user-1' });
 
     const result = await run(tools, 'list_sessions', {});
 
-    expect(result.items).toEqual(['session-1']);
+    expect(result.items).toEqual([{ sessionId: 'session-1', ownerId: 'user-1' }]);
     const query = new URL(http.requests[0]!.request.url).searchParams;
-    expect(query.get('filterOwnerId')).toBe('user-1');
+    expect(query.get('ownerId')).toBe('user-1');
     expect(query.has('userId')).toBe(false);
   });
 
@@ -255,7 +255,7 @@ describe('RedisAgentMemory toolset', () => {
     const http = transport();
     const tools = toolsWith(http.fetch, { userId: 'user-1' });
     await expect(run(tools, 'search_memories', {
-      text: 'preferences', filterOp: 'any', filter: { topics: { eq: 'preferences' } },
+      query: 'preferences', filter: { op: 'ANY', topics: { eq: 'preferences' } },
     })).rejects.toThrow();
     expect(http.requests).toHaveLength(0);
   });
@@ -272,8 +272,9 @@ describe('RedisAgentMemory toolset', () => {
   it('generates UUIDs, fills write scope, and maps partial bulk failures to input records', async () => {
     const http = transport({
       status: 201,
-      body: ({ memories }: { memories: Array<{ id: string }> }) => ({
-        created: [memories[0]!.id], errors: [{ id: memories[1]!.id, error: 'Unknown custom type' }],
+      body: ({ memories }: { memories: Array<{ memoryId: string }> }) => ({
+        created: [memories[0]!.memoryId],
+        errors: [{ memoryId: memories[1]!.memoryId, type: '/errors/bad-request', title: 'Unknown custom type', status: 400 }],
       }),
     });
     const tools = toolsWith(http.fetch, { userId: 'user-1', sessionId: 'session-1' });
@@ -281,16 +282,16 @@ describe('RedisAgentMemory toolset', () => {
       { text: 'Prefers concise replies.', memoryType: 'communication', attributes: { concise: true } },
       { text: 'Other custom data.', memoryType: 'custom-type' },
     ] });
-    const ids = http.requests[0]!.body.memories.map((record: { id: string }) => record.id);
+    const ids = http.requests[0]!.body.memories.map((record: { memoryId: string }) => record.memoryId);
     expect(new Set(ids).size).toBe(2);
     expect(result).toEqual({
       memoryIds: ids,
       created: [ids[0]],
-      errors: [{ id: ids[1], error: 'Unknown custom type' }],
+      errors: [{ memoryId: ids[1], type: '/errors/bad-request', title: 'Unknown custom type', status: 400 }],
     });
     expect(http.requests[0]!.body.memories).toEqual([
-      { id: expect.stringMatching(uuidV4), text: 'Prefers concise replies.', memoryType: 'communication', attributes: { concise: true }, ownerId: 'user-1', sessionId: 'session-1' },
-      { id: expect.stringMatching(uuidV4), text: 'Other custom data.', memoryType: 'custom-type', ownerId: 'user-1', sessionId: 'session-1' },
+      { memoryId: expect.stringMatching(uuidV4), text: 'Prefers concise replies.', memoryType: 'communication', attributes: { concise: true }, ownerId: 'user-1', sessionId: 'session-1' },
+      { memoryId: expect.stringMatching(uuidV4), text: 'Other custom data.', memoryType: 'custom-type', ownerId: 'user-1', sessionId: 'session-1' },
     ]);
     expect(http.requests).toHaveLength(1);
   });
@@ -298,7 +299,7 @@ describe('RedisAgentMemory toolset', () => {
   it('generates fresh UUIDs on every invocation and never uses caller-supplied IDs', async () => {
     const response = {
       status: 201,
-      body: ({ memories }: { memories: Array<{ id: string }> }) => ({ created: memories.map(memory => memory.id) }),
+      body: ({ memories }: { memories: Array<{ memoryId: string }> }) => ({ created: memories.map(memory => memory.memoryId) }),
     };
     const http = transport(response, response);
     const tools = toolsWith(http.fetch, { userId: 'user-1' });
@@ -309,7 +310,7 @@ describe('RedisAgentMemory toolset', () => {
       toolCallId: 'direct-call', messages: [], context: {},
     });
 
-    const ids = http.requests.map(({ body }) => body.memories[0].id);
+    const ids = http.requests.map(({ body }) => body.memories[0].memoryId);
     expect(ids).toEqual([expect.stringMatching(uuidV4), expect.stringMatching(uuidV4)]);
     expect(new Set(ids).size).toBe(2);
     expect([parsedResult, directResult]).toEqual(ids.map(id => ({ memoryIds: [id], created: [id] })));
@@ -325,8 +326,8 @@ describe('RedisAgentMemory toolset', () => {
 
   it('preflights every memory before deleting a scoped batch', async () => {
     const http = transport(
-      { body: memory({ id: 'mine' }) },
-      { body: memory({ id: 'theirs', ownerId: 'someone-else' }) },
+      { body: memory({ memoryId: 'mine' }) },
+      { body: memory({ memoryId: 'theirs', ownerId: 'someone-else' }) },
     );
     const tools = toolsWith(http.fetch, { userId: 'user-1' }, { allowDeletes: true });
     await expect(run(tools, 'delete_memories', { memoryIds: ['mine', 'theirs'] })).rejects.toThrow();
@@ -342,7 +343,7 @@ describe('RedisAgentMemory toolset', () => {
         { body: { namespace: namespace({ ownerId: 'someone-else' }) } },
       );
       const tools = toolsWith(http.fetch, { userId: 'user-1' });
-      const placement = { namespaceRef: { namespaceId: 'child-1' } };
+      const placement = { namespaceId: 'child-1' };
       const input = name === 'create_memories'
         ? { memories: [{ text: 'Private preferences.', ...placement }] }
         : name === 'add_session_event'
@@ -360,19 +361,19 @@ describe('RedisAgentMemory toolset', () => {
       { body: { namespace: namespace() } },
       {
         status: 201,
-        body: ({ memories }: { memories: Array<{ id: string }> }) => ({ created: memories.map(memory => memory.id) }),
+        body: ({ memories }: { memories: Array<{ memoryId: string }> }) => ({ created: memories.map(memory => memory.memoryId) }),
       },
     );
     const tools = toolsWith(http.fetch, { userId: 'user-1' });
     const records = ['Prefers TypeScript.', 'Prefers concise replies.'].map(text => ({
-      text, namespaceRef: { namespaceId: 'root-1' },
+      text, namespaceId: 'root-1',
     }));
     const result = await run(tools, 'create_memories', { memories: records });
     expect(http.requests.map(({ request }) => request.method)).toEqual(['GET', 'POST']);
     expect(http.requests[1]!.body.memories).toEqual(records.map(record => ({
-      ...record, id: expect.stringMatching(uuidV4), ownerId: 'user-1',
+      ...record, memoryId: expect.stringMatching(uuidV4), ownerId: 'user-1',
     })));
-    const ids = http.requests[1]!.body.memories.map((record: { id: string }) => record.id);
+    const ids = http.requests[1]!.body.memories.map((record: { memoryId: string }) => record.memoryId);
     expect(result).toEqual({ memoryIds: ids, created: ids });
   });
 
@@ -418,8 +419,9 @@ describe('RedisAgentMemory toolset', () => {
     });
     expect(result.event.actorId).toBe('assistant-1');
     expect(http.requests.map(({ request }) => request.method)).toEqual(['GET', 'POST']);
+    expect(new URL(http.requests[1]!.request.url).pathname).toMatch(/\/sessions\/session-1\/events$/);
     expect(http.requests[1]!.body).toMatchObject({
-      actorId: 'assistant-1', role: 'ASSISTANT', sessionId: 'session-1',
+      actorId: 'assistant-1', role: 'ASSISTANT',
       createdAt: timestamp, metadata: { source: 'test' },
     });
   });
@@ -489,7 +491,7 @@ describe('RedisAgentMemory toolset', () => {
           return {
             content: [
               { type: 'text', text: 'Let me check your saved preferences.' },
-              { type: 'tool-call', toolCallId: 'recall-1', toolName: 'search_memories', input: '{"text":"communication preferences"}' },
+              { type: 'tool-call', toolCallId: 'recall-1', toolName: 'search_memories', input: '{"query":"communication preferences"}' },
             ],
             finishReason: { unified: 'tool-calls', raw: 'tool_calls' }, usage, warnings: [],
           };

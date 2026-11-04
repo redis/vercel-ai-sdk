@@ -6,9 +6,8 @@ export const ownerId = sessionId.describe('Stable application user identifier. R
 export const timestamp = z.iso.datetime({ offset: true });
 export const text = z.string().min(1).max(50_000);
 export const topics = z.array(z.string().min(1).max(100)).max(50);
-export const namespaceRef = z.object({ namespaceId: id });
-export const placement = { namespace: z.string().max(255).optional(), namespaceRef: namespaceRef.optional() };
-export const page = { limit: z.number().int().min(1).max(100).optional(), pageToken: z.string().optional() };
+export const placement = { namespaceId: id.optional() };
+export const page = { limit: z.number().int().min(1).max(100).optional(), cursor: z.string().optional() };
 export const event = z.object({
   sessionId: sessionId.optional().describe('Reuse the current session ID. Omit only to create a new session.'),
   actorId: id.describe('Author of this event: user ID for USER, agent ID for ASSISTANT.'),
@@ -37,12 +36,12 @@ const comparison = z.object({
 }).refine(value => Object.values(value).filter(v => v !== undefined).length === 1,
   'Supply exactly one of eq, ne, in, all.');
 export const search = z.object({
-  text: text.optional(), similarityThreshold: z.number().min(0).max(1).optional(), ...page,
-  filterOp: z.enum(['all', 'any']).optional(),
+  query: text.optional(), minScore: z.number().min(0).max(1).optional(), ...page,
   filter: z.object({
-    sessionId: comparison.optional(), ownerId: comparison.optional(), namespace: comparison.optional(),
+    op: z.enum(['ALL', 'ANY']).optional(),
+    sessionId: comparison.optional(), ownerId: comparison.optional(),
     topics: comparison.optional(), memoryType: comparison.optional(),
-    namespaceRef: z.object({ eq: id.optional(), in: z.array(id).min(1).optional() })
+    namespaceId: z.object({ eq: id.optional(), in: z.array(id).min(1).optional() })
       .refine(v => (v.eq === undefined) !== (v.in === undefined), 'Supply exactly one of eq or in.').optional(),
     unnamespaced: z.boolean().optional(),
     createdAt: z.object({ gt: timestamp.optional(), gte: timestamp.optional(), lt: timestamp.optional(),

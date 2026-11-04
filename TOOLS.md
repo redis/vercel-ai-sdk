@@ -228,14 +228,14 @@ The three deletion tools below are exposed only when `options.allowDeletes` is `
 | Tool | Parameters and result |
 | --- | --- |
 | `get_memory_context` | `{}` → configured IDs and identity rules, no secrets |
-| `start_session` | `{actorId, text, sessionId?, namespace?, namespaceRef?}` → `{event}`; omit sessionId to have it generated |
-| `add_session_event` | `{actorId, role, content: [{text}], sessionId?, createdAt?, metadata?, namespace?, namespaceRef?}` → `{event}` |
+| `start_session` | `{actorId, text, sessionId?, namespaceId?}` → `{event}`; omit sessionId to have it generated |
+| `add_session_event` | `{actorId, role, content: [{text}], sessionId?, createdAt?, metadata?, namespaceId?}` → `{event}` |
 | `get_session_event` | `{sessionId?, eventId}` → `{event}` |
 | `get_session_memory` | `{sessionId?, includeSummarisedEvents?}` → session, events, optional summary |
-| `list_sessions` | `{ownerId?, includeAll?, limit?, pageToken?}` → `{items: string[], total, nextPageToken?}` |
+| `list_sessions` | `{ownerId?, includeAll?, limit?, cursor?}` → `{items: [{sessionId, ownerId?, ...}], nextCursor?}` |
 | `create_memories` | `{memories: [...]}` without IDs → `{memoryIds, created, errors?}`; UUIDs are generated automatically |
 | `get_memory` | `{memoryId}` → memory record |
-| `search_memories` | `{text?, filter?, filterOp?, similarityThreshold?, limit?, pageToken?}` → `{items, nextPageToken?}` |
+| `search_memories` | `{query?, filter?, minScore?, limit?, cursor?}` → `{items, nextCursor?}` |
 | `update_memory` | `{memoryId, changes: {...}}` → updated memory record |
 | `delete_memories` | `{memoryIds: [...]}` → `{deleted, errors?}` |
 | `delete_session_event` | `{sessionId?, eventId}` → deletion confirmation |
@@ -255,7 +255,7 @@ A create record contains:
   memoryType: 'semantic',           // Optional; registered custom types also work
   topics: ['programming'],
   attributes: { /* fields matching your custom type, if applicable */ },
-  namespaceRef: { namespaceId: 'your-namespace-id' },
+  namespaceId: 'your-namespace-id',
 }
 ```
 
@@ -271,28 +271,28 @@ Retry only records confirmed to have failed.
 Bulk create/delete accepts 1–100 records/IDs and preserves the server's per-record errors.
 Text accepts 1–50,000 characters; topics accept up to 50 tags.
 Updates support `text`, `memoryType`, `topics`, `ownerId`, `sessionId`, and namespace placement.
-An empty `sessionId` or legacy `namespace` clears it when not fixed by scope. Updating custom extraction-worker fields is deliberately outside the agent toolset; use the official SDK's worker endpoint for that workflow.
+An empty `sessionId` clears it when not fixed by scope. Updating custom extraction-worker fields is deliberately outside the agent toolset; use the official SDK's worker endpoint for that workflow.
 
-Search filters support `ownerId`, `sessionId`, legacy `namespace`, `topics`, and `memoryType` with exactly one of `{eq}`, `{ne}`, `{in: [...]}`, or `{all: [...]}`.
- `namespaceRef` supports `{eq}` or `{in}`. Use `unnamespaced` without namespace selectors. Date comparisons accept ISO strings:
+Search filters support `ownerId`, `sessionId`, `topics`, and `memoryType` with exactly one of `{eq}`, `{ne}`, `{in: [...]}`, or `{all: [...]}`.
+`namespaceId` supports `{eq}` or `{in}`. Use `unnamespaced` without namespace selectors. Date comparisons accept ISO strings:
 
 ```ts
 {
-  text: 'preferred programming language',
+  query: 'preferred programming language',
   filter: {
+    op: 'ALL',
     ownerId: { eq: 'user-123' },
     topics: { in: ['programming'] },
     createdAt: { gte: '2026-01-01T00:00:00Z' },
     attributes: { confirmed: { boolean: true } },
   },
-  filterOp: 'all',
   limit: 10,
 }
 ```
 
 Attribute filters accept exactly one of `{string}`, `{number}`, `{boolean}`, or `{list: string[]}` per field.
-Omit `text` to list/filter without a semantic query.
-Pagination uses the returned opaque `nextPageToken` with the same search parameters.
+Omit `query` to list/filter without a semantic query.
+Pagination uses the returned opaque `nextCursor` with the same search parameters.
 
 ## Identity and scope behavior
 
@@ -313,10 +313,9 @@ The automatic-memory model can restore available Redis Agent Memory session hist
 `scope.sessionId` restricts session operations but **does not filter long-term recall by session**, allowing recall from earlier conversations.
 To limit long-term recall to one conversation, pass an explicit `filter.sessionId`.
 
-User/namespace-scoped searches require `filterOp: 'all'`; an OR filter could bypass a fixed owner predicate and is rejected.
+User/namespace-scoped searches require `filter.op: 'ALL'`; an OR filter could bypass a fixed owner predicate and is rejected.
 Direct-ID reads, updates, and deletes check existing ownership/placement before returning or mutating a resource.
 User-scoped resource placements require a PERSONAL namespace owned by that user.
-A legacy namespace label is a grouping value and has no resource ownership to inspect.
 
 With a fixed session, `list_sessions` returns only that session.
 With a namespace scope and no fixed session it rejects listing, because Redis Agent Memory has no namespace filter for this endpoint; use known IDs.
@@ -332,7 +331,7 @@ Set `namespaceTools: true` on `createRedisAgentMemory(...)` to add:
 
 | Tool | Parameters |
 | --- | --- |
-| `list_namespaces` | `{parentId?, scope?, ownerId?, limit?, pageToken?}` |
+| `list_namespaces` | `{parentId?, scope?, ownerId?, limit?, cursor?}` |
 | `get_namespace` | `{namespaceId}` |
 | `create_namespace` | `{name?, path?, scope?, parentId?, ownerId?}` |
 | `update_namespace` | `{namespaceId, name?, state?: 'ARCHIVED'}` |
