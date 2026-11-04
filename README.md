@@ -27,7 +27,7 @@ Requires Node.js 22+, AI SDK 7.0.114+ (7.x), and Zod 4.1.8+ (4.x).
 This is a server-side, ESM-only package with TypeScript declarations.
 
 ```sh
-npm install ai-sdk-redis-agent-memory
+npm install @redis/vercel-ai-sdk
 ```
 
 Provision a Redis Agent Memory store in [Redis Cloud](https://cloud.redis.io/#/agent-memory), then set `AGENT_MEMORY_API_KEY` and `AGENT_MEMORY_STORE_ID` in your server environment.
