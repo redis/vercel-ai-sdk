@@ -44,7 +44,7 @@ const [
 ] = await Promise.all([
   import('@ai-sdk/anthropic'),
   import('ai'),
-  import('ai-sdk-redis-agent-memory'),
+  import('@redis/vercel-ai-sdk'),
 ]);
 
 const modelName = process.env.ANTHROPIC_MODEL?.trim() || 'claude-sonnet-4-5';

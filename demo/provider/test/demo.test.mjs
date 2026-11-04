@@ -186,11 +186,11 @@ test('configuration and session commands make no model or memory calls', () => {
 test('provider migration uses the unified root API and per-turn models', () => {
   const source = readFileSync(entrypoint, 'utf8');
   const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.match(source, /import\('ai-sdk-redis-agent-memory'\)/);
+  assert.match(source, /import\('@redis\/vercel-ai-sdk'\)/);
   assert.match(source, /createRedisAgentMemory\(/);
   assert.match(source, /for await[\s\S]*const model = memory\.model\(/);
-  assert.doesNotMatch(source, /forRequest|createRedisAgentMemoryProvider|ai-sdk-redis-agent-memory\/provider/);
-  assert.equal(manifest.dependencies['ai-sdk-redis-agent-memory'], 'file:../..');
-  assert.equal(realpathSync(fileURLToPath(import.meta.resolve('ai-sdk-redis-agent-memory'))),
+  assert.doesNotMatch(source, /forRequest|createRedisAgentMemoryProvider|@redis\/vercel-ai-sdk\/provider/);
+  assert.equal(manifest.dependencies['@redis/vercel-ai-sdk'], 'file:../..');
+  assert.equal(realpathSync(fileURLToPath(import.meta.resolve('@redis/vercel-ai-sdk'))),
     realpathSync(fileURLToPath(new URL('../../../dist/index.js', import.meta.url))));
 });

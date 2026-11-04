@@ -24,7 +24,7 @@ Tools do not require a configured model.
 ```ts
 import { anthropic } from '@ai-sdk/anthropic';
 import { ToolLoopAgent, isStepCount } from 'ai';
-import { createRedisAgentMemory, instructions } from 'ai-sdk-redis-agent-memory';
+import { createRedisAgentMemory, instructions } from '@redis/vercel-ai-sdk';
 
 const userId = 'user-123';
 const sessionId = 'conversation-456';
@@ -68,7 +68,7 @@ Keep session-write tools out of `activeTools` to avoid duplicate recording.
 ```ts
 import { anthropic } from '@ai-sdk/anthropic';
 import { ToolLoopAgent, isStepCount } from 'ai';
-import { createRedisAgentMemory, instructions } from 'ai-sdk-redis-agent-memory';
+import { createRedisAgentMemory, instructions } from '@redis/vercel-ai-sdk';
 
 const userId = 'user-123';
 const sessionId = 'conversation-456';
@@ -116,7 +116,7 @@ See [Recording session events](#recording-session-events) for input requirements
 Its enumerable properties are exclusively tools; credentials and the SDK client remain in closures.
 
 ```ts
-import { createRedisAgentMemory } from 'ai-sdk-redis-agent-memory';
+import { createRedisAgentMemory } from '@redis/vercel-ai-sdk';
 
 const memory = createRedisAgentMemory({ serverUrl, storeId, apiKey });
 const memoryTools = memory.tools({ scope: { userId } });

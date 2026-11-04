@@ -14,7 +14,7 @@ const [{ anthropic }, { ToolLoopAgent, isStepCount, APICallError, LoadAPIKeyErro
   await Promise.all([
     import('@ai-sdk/anthropic'),
     import('ai'),
-    import('ai-sdk-redis-agent-memory'),
+    import('@redis/vercel-ai-sdk'),
   ]);
 
 // Shell environment variables take precedence; a local .env file is optional.

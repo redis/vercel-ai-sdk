@@ -330,7 +330,7 @@ test('tools demo uses the unified factory and resolves the root library', () => 
   assert.match(source, /createRedisAgentMemory\(/);
   assert.match(source, /memory\.tools\(/);
   assert.doesNotMatch(source, /createRedisAgentMemoryTools|new RedisAgentMemory/);
-  assert.equal(manifest.dependencies['ai-sdk-redis-agent-memory'], 'file:../..');
-  assert.equal(realpathSync(fileURLToPath(import.meta.resolve('ai-sdk-redis-agent-memory'))),
+  assert.equal(manifest.dependencies['@redis/vercel-ai-sdk'], 'file:../..');
+  assert.equal(realpathSync(fileURLToPath(import.meta.resolve('@redis/vercel-ai-sdk'))),
     realpathSync(fileURLToPath(new URL('../../../dist/index.js', import.meta.url))));
 });

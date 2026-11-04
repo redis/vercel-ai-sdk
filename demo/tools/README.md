@@ -1,6 +1,6 @@
 # Minimal memory chat
 
-A terminal chat using `ai-sdk-redis-agent-memory`, AI SDK, and Anthropic. It stores
+A terminal chat using `@redis/vercel-ai-sdk`, AI SDK, and Anthropic. It stores
 user messages and assistant replies as Redis session events, and saves durable
 facts for recall after you start a new conversation or restart the app. Tool calls and
 results are printed in cyan as `[memory] ...`; failures are red.

@@ -10,7 +10,7 @@ Both are created by the same server-side `createRedisAgentMemory(...)` factory.
 
 | | Automatic-memory model | Tools |
 | --- | --- | --- |
-| Entry point | `ai-sdk-redis-agent-memory` | `ai-sdk-redis-agent-memory` |
+| Entry point | `@redis/vercel-ai-sdk` | `@redis/vercel-ai-sdk` |
 | Setup | `memory.model({ scope?, model?, ...options })` | `memory.tools({ scope? })` |
 | Agent integration | Pass a fresh returned model as the request's `model` | Pass the returned tool map as `tools` alongside your model |
 | Recall and history | Restores the scoped session and injects recalled personal memories before inference by default | The model chooses memory tools; the application manages input history |
@@ -43,7 +43,7 @@ Other AI SDK 7-compatible configured models work with the same APIs. Model-name 
 ```ts
 import { anthropic } from '@ai-sdk/anthropic';
 import { ToolLoopAgent, isStepCount } from 'ai';
-import { createRedisAgentMemory } from 'ai-sdk-redis-agent-memory';
+import { createRedisAgentMemory } from '@redis/vercel-ai-sdk';
 
 const memory = createRedisAgentMemory({
   serverUrl: process.env.AGENT_MEMORY_URL,
@@ -177,7 +177,7 @@ npm run check
 npm pack
 ```
 
-Install the resulting tarball in your application with `npm install /path/to/vercel-ai-sdk-0.1.0.tgz`. It contains the compiled library, declarations, source maps, source files, and package documentation. No demo application or credentials are included.
+Install the resulting tarball in your application with `npm install /path/to/redis-vercel-ai-sdk-0.1.0.tgz`. It contains the compiled library, declarations, source maps, source files, and package documentation. No demo application or credentials are included.
 
 See [CONTRIBUTING.md](https://github.com/redis/vercel-ai-sdk/blob/main/CONTRIBUTING.md) for the repository layout, commands, and release process. The tests use mocked HTTP and model boundaries and do not require API credentials.
 

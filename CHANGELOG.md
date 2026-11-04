@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Initial standalone `ai-sdk-redis-agent-memory` library for AI SDK 7.
+- Initial standalone `@redis/vercel-ai-sdk` library for AI SDK 7.
 - Added the unified root `createRedisAgentMemory({ serverUrl, storeId, apiKey,
   scope?, model?, allowDeletes?, namespaceTools?, timeoutMs? })` factory.
 - Added `memory.tools({ scope? })` for explicit AI SDK memory tools and
