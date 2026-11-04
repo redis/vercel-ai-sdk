@@ -30,8 +30,8 @@ This is a server-side, ESM-only package with TypeScript declarations.
 npm install @redis/vercel-ai-sdk
 ```
 
-Provision a Redis Agent Memory store in [Redis Cloud](https://cloud.redis.io/#/agent-memory), then set `AGENT_MEMORY_API_KEY` and `AGENT_MEMORY_STORE_ID` in your server environment.
-Set `AGENT_MEMORY_URL` if your store uses a different endpoint.
+Provision a Redis Agent Memory store in [Redis Cloud](https://cloud.redis.io/#/agent-memory), then set `AGENT_MEMORY_API_KEY`, `AGENT_MEMORY_STORE_ID`, and `AGENT_MEMORY_URL` in your server environment.
+There is no shared default endpoint: each store has its own URL, so use the one shown for your store.
 
 ## Quick start
 
@@ -136,10 +136,10 @@ const memory = createRedisAgentMemory({
 
 | Factory option | Default / behavior |
 | --- | --- |
-| `serverUrl` | `AGENT_MEMORY_URL`, then the production US East endpoint |
+| `serverUrl` | `AGENT_MEMORY_URL`; required here or through the environment, since each store has its own endpoint URL |
 | `storeId` | `AGENT_MEMORY_STORE_ID`; required here or through the environment |
 | `apiKey` | `AGENT_MEMORY_API_KEY`; required here or through the environment |
-| `scope` | Optional default `{ userId?, sessionId?, namespaceId? | namespace? }` |
+| `scope` | Optional default `{ userId?, sessionId?, namespaceId? }` |
 | `model` | Optional configured AI SDK model default; never a model-name string |
 | `allowDeletes` | `false`; exposes deletion tools when true |
 | `namespaceTools` | `false`; exposes namespace administration tools when true |

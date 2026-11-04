@@ -100,6 +100,7 @@ test('DEMO_SESSION_ID resumes a validated session and startup explains continuat
 test('missing credentials and invalid local configuration make zero network calls', () => {
   for (const { overrides, message } of [
     { overrides: { ANTHROPIC_API_KEY: undefined, AGENT_MEMORY_API_KEY: undefined, AGENT_MEMORY_STORE_ID: undefined }, message: /Set ANTHROPIC_API_KEY/ },
+    { overrides: { AGENT_MEMORY_URL: undefined }, message: /Set AGENT_MEMORY_URL/ },
     { overrides: { DEMO_SESSION_ID: 'not-a-uuid' }, message: /DEMO_SESSION_ID must be a UUID/ },
     { overrides: { DEMO_USER_ID: 'not a valid user' }, message: /DEMO_USER_ID must contain/ },
     { overrides: { AGENT_MEMORY_URL: 'https://name:password@memory.example.test' }, message: /Could not initialize Redis Agent Memory/ },

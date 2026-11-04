@@ -57,7 +57,8 @@ export function resolveAgentMemoryClient(
   const resolvedStoreId = storeId ?? env.AGENT_MEMORY_STORE_ID;
   if (!key?.trim()) throw new Error('Set AGENT_MEMORY_API_KEY or pass an Iris API key.');
   if (!resolvedStoreId?.trim()) throw new Error('Set AGENT_MEMORY_STORE_ID or pass storeId.');
-  const serverURL = serverUrl ?? env.AGENT_MEMORY_URL ?? 'https://gcp-us-east4.memory.redis.io';
+  const serverURL = serverUrl ?? env.AGENT_MEMORY_URL;
+  if (!serverURL?.trim()) throw new Error('Set AGENT_MEMORY_URL or pass serverUrl; each store has its own endpoint URL.');
   const url = new URL(serverURL);
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     throw new Error('serverUrl must be an HTTP(S) URL without credentials, query, or fragment.');

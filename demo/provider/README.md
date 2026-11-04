@@ -14,7 +14,7 @@ npm ci
 cp .env.example .env
 ```
 
-Fill in `ANTHROPIC_API_KEY`, `AGENT_MEMORY_API_KEY`, and `AGENT_MEMORY_STORE_ID`, then run:
+Fill in `ANTHROPIC_API_KEY`, `AGENT_MEMORY_API_KEY`, `AGENT_MEMORY_STORE_ID`, and `AGENT_MEMORY_URL` (each store has its own endpoint URL), then run:
 
 ```sh
 npm start

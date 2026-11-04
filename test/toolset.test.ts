@@ -157,14 +157,15 @@ describe('RedisAgentMemory toolset', () => {
     expect(context).not.toHaveProperty('ownerId');
   });
 
-  it('uses the production endpoint when no URL is provided', async () => {
+  it('requires a server URL because each store has its own endpoint', () => {
     vi.stubEnv('AGENT_MEMORY_URL', undefined);
-    const http = transport({ body: { items: [] } });
+    const http = transport();
     vi.stubGlobal('fetch', http.fetch);
 
-    await run(makeTools(undefined, 'store-1', apiKey), 'search_memories', {});
-
-    expect(http.requests[0]!.request.url).toBe('https://gcp-us-east4.memory.redis.io/iris/data/v1/agent-memory/stores/store-1/memories/search');
+    expect(() => makeTools(undefined, 'store-1', apiKey)).toThrow('AGENT_MEMORY_URL');
+    vi.stubEnv('AGENT_MEMORY_URL', '  ');
+    expect(() => makeTools(undefined, 'store-1', apiKey)).toThrow('AGENT_MEMORY_URL');
+    expect(http.fetch).not.toHaveBeenCalled();
   });
 
   it('fails at construction when required connection options are missing', () => {

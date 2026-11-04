@@ -297,9 +297,10 @@ test('tool output supports forced color and explicit color disabling', () => {
 test('missing credentials produce an actionable startup error without network calls', () => {
   const result = runDemo('/quit\n', {
     ANTHROPIC_API_KEY: undefined, AGENT_MEMORY_API_KEY: undefined, AGENT_MEMORY_STORE_ID: undefined,
+    AGENT_MEMORY_URL: undefined,
   });
   assert.equal(result.status, 1);
-  for (const name of ['ANTHROPIC_API_KEY', 'AGENT_MEMORY_API_KEY', 'AGENT_MEMORY_STORE_ID']) {
+  for (const name of ['ANTHROPIC_API_KEY', 'AGENT_MEMORY_API_KEY', 'AGENT_MEMORY_STORE_ID', 'AGENT_MEMORY_URL']) {
     assert.ok(result.stderr.includes(name));
   }
   assert.deepEqual(result.requests, []);
