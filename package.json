@@ -1,16 +1,16 @@
 {
-  "name": "ai-sdk-redis-agent-memory",
+  "name": "@redis/vercel-ai-sdk",
   "version": "0.1.0",
   "description": "AI SDK tools for Redis Agent Memory: session history, persistent memories, and semantic search",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/redis-developer/ai-sdk-redis-agent-memory.git"
+    "url": "git+https://github.com/redis/vercel-ai-sdk.git"
   },
-  "homepage": "https://github.com/redis-developer/ai-sdk-redis-agent-memory#readme",
+  "homepage": "https://github.com/redis/vercel-ai-sdk#readme",
   "bugs": {
-    "url": "https://github.com/redis-developer/ai-sdk-redis-agent-memory/issues"
+    "url": "https://github.com/redis/vercel-ai-sdk/issues"
   },
   "keywords": [
     "ai",
@@ -18,8 +18,10 @@
     "redis",
     "agent-memory",
     "memory",
+    "provider",
     "tools",
-    "typescript"
+    "typescript",
+    "vercel"
   ],
   "engines": {
     "node": ">=22"

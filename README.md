@@ -170,16 +170,16 @@ SDK defaults disable automatic retries, avoiding duplicate appends after uncerta
 ## Development
 
 ```sh
-git clone https://github.com/redis-developer/ai-sdk-redis-agent-memory.git
-cd ai-sdk-redis-agent-memory
+git clone https://github.com/redis/vercel-ai-sdk.git
+cd vercel-ai-sdk
 npm ci
 npm run check
 npm pack
 ```
 
-Install the resulting tarball in your application with `npm install /path/to/ai-sdk-redis-agent-memory-0.1.0.tgz`. It contains the compiled library, declarations, source maps, source files, and package documentation. No demo application or credentials are included.
+Install the resulting tarball in your application with `npm install /path/to/vercel-ai-sdk-0.1.0.tgz`. It contains the compiled library, declarations, source maps, source files, and package documentation. No demo application or credentials are included.
 
-See [CONTRIBUTING.md](https://github.com/redis-developer/ai-sdk-redis-agent-memory/blob/main/CONTRIBUTING.md) for the repository layout, commands, and release process. The tests use mocked HTTP and model boundaries and do not require API credentials.
+See [CONTRIBUTING.md](https://github.com/redis/vercel-ai-sdk/blob/main/CONTRIBUTING.md) for the repository layout, commands, and release process. The tests use mocked HTTP and model boundaries and do not require API credentials.
 
 ## License
 
