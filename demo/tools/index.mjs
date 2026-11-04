@@ -27,7 +27,7 @@ try {
   }
 }
 
-const required = ['ANTHROPIC_API_KEY', 'AGENT_MEMORY_API_KEY', 'AGENT_MEMORY_STORE_ID'];
+const required = ['ANTHROPIC_API_KEY', 'AGENT_MEMORY_API_KEY', 'AGENT_MEMORY_STORE_ID', 'AGENT_MEMORY_URL'];
 const missing = required.filter(name => !process.env[name]?.trim());
 if (missing.length) {
   console.error(`Set ${missing.join(', ')} in demo/tools/.env (see .env.example).`);

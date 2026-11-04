@@ -9,8 +9,6 @@ export interface RedisAgentMemoryScope {
   userId?: string;
   /** Locks session operations and associates new memories; recall still spans this user's sessions. */
   sessionId?: string;
-  /** Deprecated label; prefer namespaceId for resource-backed namespaces. */
-  namespace?: string;
   namespaceId?: string;
 }
 
@@ -21,7 +19,7 @@ export interface ScopeValidationOptions {
 export type ScopedMemoryRequestOptions = NonNullable<Parameters<AgentMemory['getSessionMemory']>[2]>;
 type SessionEventInput = z.infer<typeof s.event>;
 type SearchInput = NonNullable<Parameters<AgentMemory['searchLongTermMemory']>[0]>;
-type Placement = { namespace?: string; namespaceRef?: { namespaceId: string } };
+type Placement = { namespaceId?: string };
 
 export interface AppendSessionEventOptions extends ScopedMemoryRequestOptions {
   /** Reject when the named session already exists. Used by the legacy start_session tool. */
@@ -59,7 +57,8 @@ export function resolveAgentMemoryClient(
   const resolvedStoreId = storeId ?? env.AGENT_MEMORY_STORE_ID;
   if (!key?.trim()) throw new Error('Set AGENT_MEMORY_API_KEY or pass an Iris API key.');
   if (!resolvedStoreId?.trim()) throw new Error('Set AGENT_MEMORY_STORE_ID or pass storeId.');
-  const serverURL = serverUrl ?? env.AGENT_MEMORY_URL ?? 'https://gcp-us-east4.memory.redis.io';
+  const serverURL = serverUrl ?? env.AGENT_MEMORY_URL;
+  if (!serverURL?.trim()) throw new Error('Set AGENT_MEMORY_URL or pass serverUrl; each store has its own endpoint URL.');
   const url = new URL(serverURL);
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     throw new Error('serverUrl must be an HTTP(S) URL without credentials, query, or fragment.');
@@ -68,17 +67,27 @@ export function resolveAgentMemoryClient(
   return new AgentMemory({ apiKey: key, storeId: resolvedStoreId, serverURL, timeoutMs });
 }
 
+const SCOPE_KEYS: ReadonlySet<string> = new Set(['userId', 'sessionId', 'namespaceId']);
+
+/** Unknown keys would be ignored, silently dropping a boundary the caller meant to enforce. */
+function assertKnownScopeKeys(scope: object, label: string): void {
+  for (const key of Object.keys(scope)) {
+    if (SCOPE_KEYS.has(key)) continue;
+    throw new Error(key === 'namespace'
+      ? `${label}.namespace was removed; use ${label}.namespaceId.`
+      : `Unknown ${label} field: ${key}.`);
+  }
+}
+
 export function copyMemoryScope(
   scope: RedisAgentMemoryScope,
-  options: ScopeValidationOptions = {},
+  _options: ScopeValidationOptions = {},
 ): Readonly<RedisAgentMemoryScope> {
+  assertKnownScopeKeys(scope, 'scope');
   const copied = Object.freeze({ ...scope });
   if (copied.userId !== undefined) s.ownerId.parse(copied.userId);
   if (copied.sessionId !== undefined) s.sessionId.parse(copied.sessionId);
   if (copied.namespaceId !== undefined) s.id.parse(copied.namespaceId);
-  if (copied.namespace !== undefined && !copied.namespace.trim()) throw new Error('scope.namespace must not be empty.');
-  if (copied.namespace !== undefined && copied.namespaceId !== undefined) throw new Error('Choose scope.namespace or scope.namespaceId.');
-  if (options.namespaceTools && copied.namespace !== undefined) throw new Error('Namespace resource tools cannot use a legacy namespace scope.');
   return copied;
 }
 
@@ -86,8 +95,9 @@ export function extendMemoryScope(
   scope: RedisAgentMemoryScope,
   context: RedisAgentMemoryScope,
 ): RedisAgentMemoryScope {
+  assertKnownScopeKeys(context, 'context scope');
   const extended = { ...scope };
-  for (const name of ['userId', 'sessionId', 'namespace', 'namespaceId'] as const) {
+  for (const name of ['userId', 'sessionId', 'namespaceId'] as const) {
     const value = context[name];
     if (value === undefined) continue;
     if (scope[name] !== undefined && scope[name] !== value) fail(`Cannot override ${name} scope.`);
@@ -102,28 +112,18 @@ export function extendMemoryScope(
  */
 export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMemoryScope) {
   const scope = copyMemoryScope(inputScope);
-  const hasResourceScope = Boolean(scope.userId || scope.namespace !== undefined || scope.namespaceId);
+  const hasResourceScope = Boolean(scope.userId || scope.namespaceId);
 
   const checkPlacement = (value: Placement) => {
-    if (value.namespace !== undefined && value.namespaceRef !== undefined) fail('Supply namespace or namespaceRef, never both.');
-    if (scope.namespace !== undefined && value.namespace !== scope.namespace) fail('Resource is outside the configured namespace.');
-    if (scope.namespaceId !== undefined && value.namespaceRef?.namespaceId !== scope.namespaceId) {
+    if (scope.namespaceId !== undefined && value.namespaceId !== scope.namespaceId) {
       fail('Resource is outside the configured namespace resource.');
     }
   };
 
   const place = <T extends Placement>(input: T): T => {
-    const value = { ...input };
-    if (value.namespace !== undefined && value.namespaceRef !== undefined) fail('Supply namespace or namespaceRef, never both.');
-    if (scope.namespace !== undefined) {
-      if (value.namespaceRef || (value.namespace !== undefined && value.namespace !== scope.namespace)) fail('Cannot override namespace scope.');
-      value.namespace = scope.namespace;
-    }
-    if (scope.namespaceId !== undefined) {
-      if (value.namespace !== undefined || (value.namespaceRef && value.namespaceRef.namespaceId !== scope.namespaceId)) fail('Cannot override namespace scope.');
-      value.namespaceRef = { namespaceId: scope.namespaceId };
-    }
-    return value;
+    if (scope.namespaceId === undefined) return { ...input };
+    if (input.namespaceId !== undefined && input.namespaceId !== scope.namespaceId) fail('Cannot override namespace scope.');
+    return { ...input, namespaceId: scope.namespaceId };
   };
 
   const resolveSession = (value?: string) => {
@@ -164,10 +164,10 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
   };
 
   const assertPlacementOwner = async (value: Placement, options?: ScopedMemoryRequestOptions) => {
-    if (!scope.userId || !value.namespaceRef) return;
+    if (!scope.userId || !value.namespaceId) return;
     const signal = options?.signal ?? undefined;
     throwIfAborted(signal);
-    const { namespace } = await client.getNamespace(value.namespaceRef.namespaceId, options);
+    const { namespace } = await client.getNamespace(value.namespaceId, options);
     throwIfAborted(signal);
     const root = namespace.rootId === namespace.namespaceId ? namespace
       : (await client.getNamespace(namespace.rootId, options)).namespace;
@@ -179,12 +179,11 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
 
   const scopeSearch = (input: SearchInput): SearchInput => {
     const filter: LongTermMemoryFilter = { ...input.filter };
-    if (filter.namespace && filter.namespaceRef) fail('Supply namespace or namespaceRef, never both.');
-    if (filter.unnamespaced !== undefined && (filter.namespace || filter.namespaceRef)) {
+    if (filter.unnamespaced !== undefined && filter.namespaceId) {
       fail('unnamespaced cannot be combined with namespace selectors.');
     }
-    if (hasResourceScope && input.filterOp === 'any') fail('Scoped searches require filterOp all to preserve isolation.');
-    const fixed = (name: 'ownerId' | 'namespace' | 'namespaceRef', value: string) => {
+    if (hasResourceScope && filter.op?.toUpperCase() === 'ANY') fail('Scoped searches require filter.op ALL to preserve isolation.');
+    const fixed = (name: 'ownerId' | 'namespaceId', value: string) => {
       const existing = filter[name];
       if (existing && (existing.eq !== value || Object.values(existing).filter(item => item !== undefined).length !== 1)) {
         fail(`Cannot override ${name} scope.`);
@@ -192,17 +191,11 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
       filter[name] = { eq: value };
     };
     if (scope.userId) fixed('ownerId', scope.userId);
-    if (scope.namespace !== undefined || scope.namespaceId) {
+    if (scope.namespaceId) {
       if (filter.unnamespaced !== undefined) fail('Cannot search unnamespaced records within a namespace scope.');
-      if (scope.namespace !== undefined) {
-        if (filter.namespaceRef) fail('Cannot override namespace scope.');
-        fixed('namespace', scope.namespace);
-      } else {
-        if (filter.namespace) fail('Cannot override namespace scope.');
-        fixed('namespaceRef', scope.namespaceId!);
-      }
+      fixed('namespaceId', scope.namespaceId);
     }
-    return { ...input, filter, filterOp: hasResourceScope ? 'all' : input.filterOp };
+    return { ...input, filter: hasResourceScope ? { ...filter, op: 'ALL' } : filter };
   };
 
   const searchLongTermMemory = (
@@ -215,7 +208,7 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
     limit: number,
     options?: ScopedMemoryRequestOptions,
   ) => {
-    const result = await searchLongTermMemory({ text, limit }, options);
+    const result = await searchLongTermMemory({ query: text, limit }, options);
     for (const memory of result.items) {
       if (scope.userId && memory.ownerId !== scope.userId) fail('Memory is outside the configured user scope.');
       checkPlacement(memory);
@@ -257,11 +250,12 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
     await assertPlacementOwner(placed, requestOptions);
     throwIfAborted(requestSignal);
     onPostStatus?.('started');
-    const result = await client.addSessionEvent({
-      ...placed,
-      sessionId,
-      createdAt: input.createdAt ? new Date(input.createdAt) : new Date(),
-    }, requestOptions);
+    const { sessionId: _sessionId, ...eventFields } = placed;
+    const body = { ...eventFields, createdAt: input.createdAt ? new Date(input.createdAt) : new Date() };
+    // createSession refuses an existing ID with 409; addSessionEvent appends and creates a missing session.
+    const result = sessionId && !start
+      ? await client.addSessionEvent(sessionId, body, requestOptions)
+      : await client.createSession({ ...body, sessionId }, requestOptions);
     onPostStatus?.('acknowledged');
     if (validateResponse && (
       result.event.sessionId !== sessionId || result.event.actorId !== input.actorId || result.event.role !== input.role

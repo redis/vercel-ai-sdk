@@ -13,7 +13,7 @@ const recall = {
   type: 'tool-call' as const,
   toolCallId: 'recall-1',
   toolName: 'search_memories',
-  input: '{"text":"communication preferences"}',
+  input: '{"query":"communication preferences"}',
 };
 
 function memoryTools(fetch: typeof globalThis.fetch) {
@@ -34,7 +34,7 @@ describe('AI SDK 7 agent execution', () => {
       requests.push({ request, body: await request.clone().json() });
       return Response.json({
         items: [{
-          id: 'memory-1',
+          memoryId: 'memory-1',
           text: 'Prefers concise replies.',
           ownerId: 'user-1',
           sessionId: 'previous-session',
@@ -85,7 +85,7 @@ describe('AI SDK 7 agent execution', () => {
       type: 'tool-result',
       toolCallId: 'recall-1',
       toolName: 'search_memories',
-      output: { items: [{ id: 'memory-1', text: 'Prefers concise replies.', sessionId: 'previous-session' }] },
+      output: { items: [{ memoryId: 'memory-1', text: 'Prefers concise replies.', sessionId: 'previous-session' }] },
     });
     expect(parts.find(part => part.type === 'text-delta')).toMatchObject({
       text: 'I will keep my replies concise.',
@@ -95,13 +95,11 @@ describe('AI SDK 7 agent execution', () => {
     expect(modelCalls).toBe(2);
     expect(requests).toHaveLength(1);
     expect(requests[0]!.request.method).toBe('POST');
-    expect(requests[0]!.request.url).toBe('https://memory.example.test/v1/stores/store-1/long-term-memory/search');
+    expect(requests[0]!.request.url).toBe('https://memory.example.test/iris/data/v1/agent-memory/stores/store-1/memories/search');
     expect(requests[0]!.body).toMatchObject({
-      text: 'communication preferences',
-      filter: { ownerId: { eq: 'user-1' } },
-      filterOp: 'all',
+      query: 'communication preferences',
+      filter: { op: 'ALL', ownerId: { eq: 'user-1' } },
     });
-    expect(requests[0]!.body).toHaveProperty('filter', { ownerId: { eq: 'user-1' } });
   });
 
   it('cancels in-flight Redis HTTP work when an agent generation is aborted', async () => {

@@ -21,7 +21,7 @@ npm ci
 cp .env.example .env
 ```
 
-Fill in the three required values in `demo/tools/.env`, then run from `demo/tools/`:
+Fill in the four required values in `demo/tools/.env` (including `AGENT_MEMORY_URL`; each store has its own endpoint URL), then run from `demo/tools/`:
 
 ```sh
 npm start
@@ -35,8 +35,7 @@ terminal. With nvm, run `nvm install 22` to install and select a supported versi
 or `nvm use 24` if Node 24 is already installed, then retry `npm start`.
 
 The default model is `claude-sonnet-4-5`; set `ANTHROPIC_MODEL` to use another
-Anthropic model that supports tools. Set `AGENT_MEMORY_URL` if your store uses a
-different endpoint. Calls use your Anthropic and Redis accounts.
+Anthropic model that supports tools. Calls use your Anthropic and Redis accounts.
 
 Colors are enabled in interactive terminals. Set `NO_COLOR=1` to disable them,
 or `FORCE_COLOR=1` to enable them when redirecting output. `FORCE_COLOR=0` also

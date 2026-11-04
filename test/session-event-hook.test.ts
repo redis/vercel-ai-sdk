@@ -44,7 +44,8 @@ function transport(options: {
         ? Response.json({ sessionId, ownerId, events: [] })
         : Response.json({ title: 'Missing session', type: '/errors/resource-not-found' }, { status: 404 });
     }
-    const event = await request.json() as WrittenEvent;
+    const body = await request.json() as WrittenEvent;
+    const event = { ...body, sessionId: new URL(request.url).pathname.match(/\/sessions\/([^/]+)\/events$/)?.[1] ?? body.sessionId };
     writes.push(event);
     await options.beforeWrite?.(event);
     if (event.role === options.failRole) return Response.json({

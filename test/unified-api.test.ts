@@ -189,6 +189,6 @@ describe('createRedisAgentMemory', () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({ filter: { ownerId: { eq: 'other-user' } } });
     expect(requests[0]).not.toHaveProperty('filter.sessionId');
-    expect(requests[0]).not.toHaveProperty('filter.namespaceRef');
+    expect(requests[0]).not.toHaveProperty('filter.namespaceId');
   });
 });

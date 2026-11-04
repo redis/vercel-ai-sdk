@@ -42,8 +42,8 @@ globalThis.fetch = async (input, init) => {
     });
   }
 
-  const root = '/v1/stores/demo-test-store';
-  const sessionRoot = `${root}/session-memory`;
+  const root = '/iris/data/v1/agent-memory/stores/demo-test-store';
+  const sessionRoot = `${root}/sessions`;
   if (url.origin === 'https://memory.example.test') {
     if (request.method === 'GET' && url.pathname.startsWith(`${sessionRoot}/`)) {
       const sessionId = url.pathname.slice(sessionRoot.length + 1);
@@ -59,25 +59,27 @@ globalThis.fetch = async (input, init) => {
         ? Response.json({ sessionId, ownerId: 'demo-test-user', events })
         : Response.json({ title: 'Missing' }, { status: 404 });
     }
-    if (request.method === 'POST' && url.pathname === `${sessionRoot}/events`) {
-      record({ kind: 'session-append', ...entry });
-      const events = sessions.get(body.sessionId) ?? [];
-      const event = { ...body, eventId: `event-${events.length + 1}`, systemTimestamp: '2026-10-07T12:00:00.000Z' };
+    const append = request.method === 'POST' && url.pathname.match(/\/sessions\/([^/]+)\/events$/);
+    if (append) {
+      const sessionId = append[1];
+      record({ kind: 'session-append', ...entry, body: { ...body, sessionId } });
+      const events = sessions.get(sessionId) ?? [];
+      const event = { ...body, sessionId, eventId: `event-${events.length + 1}`, systemTimestamp: '2026-10-07T12:00:00.000Z' };
       events.push(event);
-      sessions.set(body.sessionId, events);
+      sessions.set(sessionId, events);
       if (process.env.DEMO_TEST_SCENARIO === 'write-failure' && !failedWrite) {
         failedWrite = true;
         return Response.json({ detail: 'private-response-body' }, { status: 500 });
       }
       return Response.json({ event }, { status: 201 });
     }
-    if (request.method === 'POST' && url.pathname === `${root}/long-term-memory/search`) {
+    if (request.method === 'POST' && url.pathname === `${root}/memories/search`) {
       record({ kind: 'memory-search', ...entry });
       if (process.env.DEMO_TEST_SCENARIO === 'read-failure') {
         return Response.json({ detail: 'private-response-body' }, { status: 500 });
       }
       return Response.json({ items: [{
-        id: 'memory-1', text: 'Prefers concise TypeScript examples.', ownerId: 'demo-test-user',
+        memoryId: 'memory-1', text: 'Prefers concise TypeScript examples.', ownerId: 'demo-test-user',
         createdAt: '2026-10-07T12:00:00.000Z', updatedAt: '2026-10-07T12:00:00.000Z',
       }] });
     }

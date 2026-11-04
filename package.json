@@ -1,6 +1,6 @@
 {
   "name": "@redis/vercel-ai-sdk",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "AI SDK tools for Redis Agent Memory: session history, persistent memories, and semantic search",
   "type": "module",
   "license": "MIT",
@@ -59,7 +59,7 @@
     "prepublishOnly": "npm run check"
   },
   "dependencies": {
-    "@redis-iris/agent-memory": "~0.3.1",
+    "@redis-iris/agent-memory": "^1.0.0",
     "@types/json-schema": "^7.0.15"
   },
   "peerDependencies": {

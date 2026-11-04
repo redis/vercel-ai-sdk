@@ -77,7 +77,7 @@ globalThis.fetch = async (input, init) => {
     if (modelCalls === 3) {
       return reply([{ type: 'text', text: 'I will check your saved preferences.' }, {
         type: 'tool_use', id: 'recall-1', name: 'search_memories',
-        input: { text: 'preferred programming language for examples' },
+        input: { query: 'preferred programming language for examples' },
       }], 'tool_use');
     }
     if (modelCalls === 4) {
@@ -85,8 +85,9 @@ globalThis.fetch = async (input, init) => {
     }
   }
 
-  const memoryPath = '/v1/stores/demo-test-store/long-term-memory';
-  const sessionPath = '/v1/stores/demo-test-store/session-memory';
+  const root = '/iris/data/v1/agent-memory/stores/demo-test-store';
+  const memoryPath = `${root}/memories`;
+  const sessionPath = `${root}/sessions`;
   if (url.origin === 'https://memory.example.test') {
     if (request.method === 'GET' && url.pathname.startsWith(`${sessionPath}/`)) {
       record({ kind: 'session-get', ...entry });
@@ -96,18 +97,21 @@ globalThis.fetch = async (input, init) => {
         ? Response.json({ sessionId, ownerId: events[0].actorId, events })
         : Response.json({ title: 'Session not found', type: '/errors/resource-not-found' }, { status: 404 });
     }
-    if (request.method === 'POST' && url.pathname === `${sessionPath}/events`) {
-      record({ kind: 'session-append', ...entry });
+    // Appends carry the session ID in the path; session creation carries it in the body.
+    const appendPath = request.method === 'POST' && url.pathname.match(/\/sessions\/([^/]+)\/events$/);
+    if (appendPath || (request.method === 'POST' && url.pathname === sessionPath)) {
+      const sessionId = appendPath ? appendPath[1] : (body.sessionId ?? crypto.randomUUID());
+      record({ kind: 'session-append', ...entry, body: { ...body, sessionId } });
       if (process.env.DEMO_TEST_SCENARIO === 'slow-session-events') {
         await new Promise(resolve => setTimeout(resolve, 20));
       }
-      const events = sessions.get(body.sessionId) ?? [];
+      const events = sessions.get(sessionId) ?? [];
       const event = {
-        ...body, eventId: `event-${events.length + 1}`,
+        ...body, sessionId, eventId: `event-${events.length + 1}`,
         systemTimestamp: '2026-09-28T12:00:00.000Z',
       };
       events.push(event);
-      sessions.set(body.sessionId, events);
+      sessions.set(sessionId, events);
       const failedRole = {
         'failed-user-event': 'USER',
         'failed-assistant-event': 'ASSISTANT',
@@ -118,7 +122,7 @@ globalThis.fetch = async (input, init) => {
         return Response.json({ title: 'Injected append failure', type: '/errors/unexpected-error' }, { status: 500 });
       }
       if (process.env.DEMO_TEST_SCENARIO === 'slow-session-events') {
-        record({ kind: 'session-append-complete', role: body.role, sessionId: body.sessionId });
+        record({ kind: 'session-append-complete', role: body.role, sessionId });
       }
       return Response.json({ event }, { status: 201 });
     }
@@ -127,7 +131,7 @@ globalThis.fetch = async (input, init) => {
     if (url.pathname === memoryPath) {
       record({ kind: 'create', ...entry });
       memories.push(...body.memories);
-      return Response.json({ created: body.memories.map(memory => memory.id) }, { status: 201 });
+      return Response.json({ created: body.memories.map(memory => memory.memoryId) }, { status: 201 });
     }
     if (url.pathname === `${memoryPath}/search`) {
       record({ kind: 'search', ...entry });
