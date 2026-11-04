@@ -318,7 +318,7 @@ Direct-ID reads, updates, and deletes check existing ownership/placement before 
 User-scoped resource placements require a PERSONAL namespace owned by that user.
 
 With a fixed session, `list_sessions` returns only that session.
-With a namespace scope and no fixed session it rejects listing, because Redis Agent Memory has no namespace filter for this endpoint; use known IDs.
+With a namespace scope and no fixed session, `list_sessions` filters by that `namespaceId` (no owner or `includeAll` needed; `includeAll` is rejected because the service does not allow it alongside a filter) and rejects any returned session outside it.
 Unscoped store-wide listing requires explicit `includeAll: true`.
 
 Resolved scopes provide application guardrails and use preflight reads.

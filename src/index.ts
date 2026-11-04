@@ -125,7 +125,7 @@ function buildTools(
       },
     }),
     list_sessions: tool({
-      description: 'List session IDs for an owner, with pagination. Unscoped callers must explicitly request includeAll to list the whole store.',
+      description: 'List sessions for an owner, with pagination, within any fixed namespace scope. Unscoped callers must explicitly request includeAll to list the whole store.',
       inputSchema: z.object({ ownerId: s.ownerId.optional(), includeAll: z.boolean().optional(), ...s.page,
         limit: z.number().int().min(1).max(1000).optional() }),
       execute: async (input, { abortSignal }) => {
@@ -134,12 +134,19 @@ function buildTools(
           const session = await assertSession(scope.sessionId, abortSignal);
           return { items: [{ sessionId: session.sessionId, ownerId: session.ownerId, namespaceId: session.namespaceId }] };
         }
-        if (scope.namespaceId) fail('The Iris session-list API cannot filter namespaces. Use a known session ID with get_session_memory.');
-        if (input.includeAll && (scope.userId || input.ownerId)) fail('includeAll cannot be combined with a user scope or ownerId.');
+        if (input.includeAll && (scope.userId || scope.namespaceId || input.ownerId)) {
+          fail('includeAll cannot be combined with a user or namespace scope, or ownerId.');
+        }
         const owner = input.ownerId || scope.userId;
-        if (!owner && !input.includeAll) fail('Supply ownerId or explicitly set includeAll: true.');
+        if (!owner && !scope.namespaceId && !input.includeAll) fail('Supply ownerId or explicitly set includeAll: true.');
         if (owner) resolveOwner(owner);
-        return client.listSessions(input.limit, input.cursor, owner, owner ? undefined : true, { signal: abortSignal });
+        // The service rejects includeAll alongside any filter, so a namespace scope stands in for it.
+        const filtered = owner || scope.namespaceId;
+        const result = await client.listSessions(
+          input.limit, input.cursor, owner, filtered ? undefined : true, { signal: abortSignal }, scope.namespaceId,
+        );
+        for (const item of result.items) checkPlacement(item);
+        return result;
       },
     }),
     create_memories: tool({

@@ -238,6 +238,33 @@ describe('RedisAgentMemory toolset', () => {
     expect(query.has('userId')).toBe(false);
   });
 
+  it('filters session listing by the fixed namespace and rejects sessions outside it', async () => {
+    const http = transport(
+      { body: { items: [{ sessionId: 'session-1', ownerId: 'user-1', namespaceId: 'notes-1' }] } },
+      { body: { items: [{ sessionId: 'session-2', ownerId: 'user-1', namespaceId: 'other' }] } },
+    );
+    const tools = toolsWith(http.fetch, { userId: 'user-1', namespaceId: 'notes-1' });
+
+    const result = await run(tools, 'list_sessions', {});
+
+    expect(result.items).toEqual([{ sessionId: 'session-1', ownerId: 'user-1', namespaceId: 'notes-1' }]);
+    const query = new URL(http.requests[0]!.request.url).searchParams;
+    expect(query.get('ownerId')).toBe('user-1');
+    expect(query.get('namespaceId')).toBe('notes-1');
+    await expect(run(tools, 'list_sessions', {})).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
+  });
+
+  it('lists a namespace without an owner or includeAll, which the service refuses to combine with a filter', async () => {
+    const http = transport({ body: { items: [{ sessionId: 'session-1', namespaceId: 'notes-1' }] } });
+    const tools = toolsWith(http.fetch, { namespaceId: 'notes-1' });
+    await run(tools, 'list_sessions', {});
+    const query = new URL(http.requests[0]!.request.url).searchParams;
+    expect(query.get('namespaceId')).toBe('notes-1');
+    expect(query.has('includeAll')).toBe(false);
+    await expect(run(tools, 'list_sessions', { includeAll: true })).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
+    expect(http.requests).toHaveLength(1);
+  });
+
   it('limits namespace administration to personal namespaces owned by the scoped user', async () => {
     const http = transport({ body: { items: [namespace()] } });
     const tools = toolsWith(http.fetch, { userId: 'user-1' }, { namespaceTools: true });
