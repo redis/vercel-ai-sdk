@@ -58,9 +58,9 @@ function assertSavedAndRecalled(result, { freshHistory = true } = {}) {
   assert.equal(model.length, 4, 'Each turn uses one tool step and one reply step.');
   assert.ok(model.every(request => request.method === 'POST'));
   assert.equal(creates[0].body.memories[0].ownerId, 'demo-test-user');
-  assert.match(creates[0].body.memories[0].id, uuid);
-  assert.deepEqual(searches[0].body.filter, { ownerId: { eq: 'demo-test-user' } });
-  assert.equal(searches[0].body.filterOp, 'all');
+  assert.match(creates[0].body.memories[0].memoryId, uuid);
+  assert.deepEqual(searches[0].body.filter, { op: 'ALL', ownerId: { eq: 'demo-test-user' } });
+  assert.equal(searches[0].body.query, 'preferred programming language for examples');
   assert.match(JSON.stringify(model[2].body.messages), /Which programming language/);
   if (freshHistory) {
     assert.equal(model[2].body.messages.length, 1, 'The recall turn must not contain old chat history.');
