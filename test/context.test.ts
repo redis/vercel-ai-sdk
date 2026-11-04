@@ -55,6 +55,15 @@ const creators = [
   },
 ];
 
+it('rejects retired scope fields passed per call to tools() and model()', () => {
+  const memory = createRedisAgentMemory({
+    serverUrl: serverURL, storeId: 'store-1', apiKey, model: new MockLanguageModelV4(),
+  });
+  const legacy = { userId: 'user-1', namespace: 'tenant-A' } as unknown as RedisAgentMemoryScope;
+  expect(() => memory.tools({ scope: legacy })).toThrow(/namespaceId/);
+  expect(() => memory.model({ scope: legacy })).toThrow(/namespaceId/);
+});
+
 it('preserves tool-map typing and withContext narrowing', async () => {
   const instance = makeTools(serverURL, 'store-1', apiKey);
   const tools: ToolSet = instance;
@@ -108,6 +117,15 @@ describe.each(creators)('withContext via $name', ({ create, fromEnvironment }) =
       expect(() => create().withContext(scope)).toThrow();
     }
     expect(http.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects the retired namespace selector and unknown scope fields instead of ignoring them', () => {
+    const legacy = { namespace: 'tenant-A' } as unknown as RedisAgentMemoryScope;
+    const unknown = { userId: 'user-1', tenant: 'A' } as unknown as RedisAgentMemoryScope;
+    expect(() => create(legacy)).toThrow(/namespaceId/);
+    expect(() => create({ userId: 'user-1' }).withContext(legacy)).toThrow(/namespaceId/);
+    expect(() => create({ userId: 'user-1' }).withContext(unknown)).toThrow(/Unknown context scope field: tenant/);
+    expect(() => create(unknown)).toThrow(/Unknown scope field: tenant/);
   });
 
   it('retains enabled tools and hides withContext from enumeration and object spread', async () => {

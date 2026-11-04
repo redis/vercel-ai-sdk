@@ -4,7 +4,7 @@
 
 * `list_sessions` now filters by a fixed `scope.namespaceId` instead of rejecting namespace-scoped listing.
 * Bumps `@redis-iris/agent-memory` to v1.0.0.
-* **Breaking:** `namespaceRef` and the legacy `namespace` label are replaced by `namespaceId`; scope no longer accepts `namespace`.
+* **Breaking:** `namespaceRef` and the legacy `namespace` label are replaced by `namespaceId`; scope no longer accepts `namespace`, and unknown scope fields now throw rather than being ignored.
 * **Breaking:** `search_memories` takes `query`, `minScore`, and `filter.op` (`ALL`/`ANY`) instead of `text`, `similarityThreshold`, and `filterOp`.
 * **Breaking:** pagination uses `cursor` / `nextCursor` instead of `pageToken` / `nextPageToken`; `list_sessions` returns session objects without `total`.
 

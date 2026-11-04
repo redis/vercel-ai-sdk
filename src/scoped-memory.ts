@@ -66,10 +66,23 @@ export function resolveAgentMemoryClient(
   return new AgentMemory({ apiKey: key, storeId: resolvedStoreId, serverURL, timeoutMs });
 }
 
+const SCOPE_KEYS: ReadonlySet<string> = new Set(['userId', 'sessionId', 'namespaceId']);
+
+/** Unknown keys would be ignored, silently dropping a boundary the caller meant to enforce. */
+function assertKnownScopeKeys(scope: object, label: string): void {
+  for (const key of Object.keys(scope)) {
+    if (SCOPE_KEYS.has(key)) continue;
+    throw new Error(key === 'namespace'
+      ? `${label}.namespace was removed; use ${label}.namespaceId.`
+      : `Unknown ${label} field: ${key}.`);
+  }
+}
+
 export function copyMemoryScope(
   scope: RedisAgentMemoryScope,
   _options: ScopeValidationOptions = {},
 ): Readonly<RedisAgentMemoryScope> {
+  assertKnownScopeKeys(scope, 'scope');
   const copied = Object.freeze({ ...scope });
   if (copied.userId !== undefined) s.ownerId.parse(copied.userId);
   if (copied.sessionId !== undefined) s.sessionId.parse(copied.sessionId);
@@ -81,6 +94,7 @@ export function extendMemoryScope(
   scope: RedisAgentMemoryScope,
   context: RedisAgentMemoryScope,
 ): RedisAgentMemoryScope {
+  assertKnownScopeKeys(context, 'context scope');
   const extended = { ...scope };
   for (const name of ['userId', 'sessionId', 'namespaceId'] as const) {
     const value = context[name];
