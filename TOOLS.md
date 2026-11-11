@@ -392,6 +392,12 @@ User/namespace-scoped searches require `filter.op: 'ALL'`; an OR filter could by
 Direct-ID reads, updates, and deletes check existing ownership/placement before returning or mutating a resource.
 User-scoped resource placements require a PERSONAL namespace owned by that user.
 
+A scope with only `sessionId` fixes the session for session tools but sets no owner or namespace boundary.
+Without a fixed `userId` or `namespaceId`, `upsert_memory` replaces a memory by ID without an ownership check.
+Summary View, document ingestion, namespace routing, and automatic-routing tools are likewise unrestricted.
+This matches the existing long-term memory tools, which check ownership only under a `userId` or `namespaceId`.
+Set `userId` or `namespaceId` whenever `sessionId` must act as a write boundary.
+
 With a fixed session, `list_sessions` returns only that session.
 Without a fixed session, `list_sessions` needs an `ownerId`, a `namespaceId`, or explicit `includeAll: true`.
 A fixed `userId` supplies the owner, and a fixed `namespaceId` supplies the namespace.
