@@ -113,16 +113,16 @@ function buildTools(
       }),
     }),
     start_session: tool({
-      description: 'Start a conversation with the user’s first event. Redis Agent Memory generates and returns a session ID when none is provided. Retain the returned ID. Fails when the named session already exists.',
+      description: 'Start a conversation with the user’s first event. Redis Agent Memory generates and returns a session ID when none is provided. Retain the returned ID. Fails when the named session already exists. With idempotencyKey, a retry whose actorId, text, and createdAt match the session’s first event returns that event instead.',
       inputSchema: z.object({
         sessionId: s.sessionId.optional(), actorId: s.id, text: s.text,
         createdAt: s.timestamp.optional().describe('ISO 8601 timestamp; defaults to the current time. Supply it with idempotencyKey so a retry sends the identical request.'),
-        idempotencyKey: s.idempotencyKey.optional(), ...s.placement,
+        idempotencyKey: s.sessionIdempotencyKey.optional(), ...s.placement,
       }),
       execute: (input, { abortSignal }) => append({ ...input, role: 'USER', content: [{ text: input.text }] }, abortSignal, true),
     }),
     add_session_event: tool({
-      description: 'Append a USER, ASSISTANT, or SYSTEM event. Reuse the conversation’s sessionId. actorId is the author. Do not duplicate application logging. Retry an uncertain append only with the same idempotencyKey and identical input, including createdAt.',
+      description: 'Append a USER, ASSISTANT, or SYSTEM event. Reuse the conversation’s sessionId. actorId is the author. Do not duplicate application logging. The store may not deduplicate appends by idempotencyKey, so after an uncertain append read get_session_memory before retrying.',
       inputSchema: s.event, execute: (input, { abortSignal }) => append(input, abortSignal),
     }),
     get_session_event: tool({

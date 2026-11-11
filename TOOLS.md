@@ -252,7 +252,7 @@ The three deletion tools below are exposed only when `options.allowDeletes` is `
 Session/owner IDs follow the server's 1–64 alphanumeric-or-hyphen convention; actor IDs accept 1–255 characters.
 An `upsert_memory` ID accepts 1 to 64 letters, digits, underscores, or hyphens.
 `limit` accepts 1 to 100, except `list_sessions`, which accepts 1 to 1000.
-`start_session` fails when the named session already exists.
+`start_session` fails when the named session already exists, except for a keyed retry that matches its first event.
 
 A create record contains:
 
@@ -282,12 +282,13 @@ Text accepts 1–50,000 characters; topics accept up to 50 tags.
 
 `start_session`, `add_session_event`, `create_memories`, `update_memory`, `upsert_memory`, and `update_memory_fields` accept an optional `idempotencyKey` of 1 to 255 characters.
 The tools pass it to Redis Agent Memory unchanged.
-Per the tool descriptions, a retry that reuses the key with the identical request replays the saved result for up to 24 hours.
+For memory writes, a retry that reuses the key with the identical request replays the saved result, and the same key with a different request fails with HTTP 409.
 A store that selects an input hook requires the key, and a write without it fails.
 
-To retry an uncertain write, send the identical request with the same key.
-For a session event, the identical request includes `createdAt`.
-Without `createdAt` the tool stamps the current time, so a retry is a different request.
+To retry an uncertain memory write, send the identical request with the same key.
+Session events are different.
+The store may not deduplicate `add_session_event` by the key, so an identical keyed retry can append a second event.
+After an uncertain append, read the session with `get_session_memory` before retrying.
 
 Without a key, each `create_memories` call generates fresh UUID v4 IDs.
 If a request times out or its outcome is uncertain, search for the memories before retrying to avoid duplicates.
@@ -300,8 +301,10 @@ Reordering the records or changing an owner changes the IDs.
 
 The tools do not retry or deduplicate writes without a key.
 `start_session` with a named `sessionId` checks first that the session does not exist.
-If an uncertain first attempt created the session, a retry fails with that check, even with the same key.
-Read the session with `get_session_memory` instead.
+The store refuses to create an existing session even with the same key, so the tool handles a keyed retry itself.
+When the session exists, passes the scope checks, and its first event matches the request's `actorId`, role, text, and any `createdAt`, the tool returns that event without writing.
+Otherwise, and always without a key, the retry fails with that check.
+For a matching retry, send the same `createdAt` as the first attempt.
 
 ### Updates and revisions
 

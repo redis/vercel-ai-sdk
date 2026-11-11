@@ -12,6 +12,9 @@ export const page = { limit: z.number().int().min(1).max(100).optional(), cursor
 export const idempotencyKey = z.string().min(1).max(255).describe(
   'Retry key. Reuse it only with the identical request to replay the saved result for up to 24 hours. ' +
   'Required when the store selects an input hook.');
+export const sessionIdempotencyKey = z.string().min(1).max(255).describe(
+  'Required when the store selects an input hook. The store may not deduplicate session events by this key, ' +
+  'so after an uncertain append read get_session_memory before retrying.');
 export const expectedRevision = z.string().min(1).describe(
   'Apply the write only if the memory still has this revision. Read it from get_memory. A stale revision fails with HTTP 412.');
 export const sortOrder = z.enum(['ASC', 'DESC']);
@@ -23,7 +26,7 @@ export const event = z.object({
   content: z.array(z.object({ text })).min(1),
   createdAt: timestamp.optional().describe('ISO 8601 timestamp; defaults to the current time.'),
   metadata: z.unknown().optional().describe('Optional JSON metadata attached to the event.'),
-  idempotencyKey: idempotencyKey.optional(),
+  idempotencyKey: sessionIdempotencyKey.optional(),
   ...placement,
 });
 export const memory = z.object({

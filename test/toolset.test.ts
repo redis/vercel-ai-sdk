@@ -456,6 +456,45 @@ describe('RedisAgentMemory toolset', () => {
     expect(http.requests).toHaveLength(0);
   });
 
+  it('returns the first event for a keyed start_session retry after the first attempt created the session', async () => {
+    const reply = event({ eventId: 'event-2', actorId: 'assistant-1', role: 'ASSISTANT', createdAt: '2026-09-25T12:35:00.000Z' });
+    const history = { sessionId: 'session-1', ownerId: 'user-1', events: [reply, event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    const result = await run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', createdAt: timestamp, idempotencyKey: 'start-1',
+    });
+    expect(result.event).toMatchObject({ eventId: 'event-1', sessionId: 'session-1', actorId: 'user-1', role: 'USER' });
+    expect(http.requests.map(({ request }) => request.method)).toEqual(['GET', 'GET']);
+  });
+
+  it('refuses a keyed start_session whose request differs from the existing first event', async () => {
+    const history = { sessionId: 'session-1', ownerId: 'user-1', events: [event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    await expect(run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Something else.', idempotencyKey: 'start-1',
+    })).rejects.toThrow(/first event differs/);
+    expect(http.requests.map(({ request }) => request.method)).toEqual(['GET', 'GET']);
+  });
+
+  it('refuses a keyed start_session on another owner\'s session before any write', async () => {
+    const http = transport({ body: { sessionId: 'session-1', ownerId: 'another-user', events: [] } });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    await expect(run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', idempotencyKey: 'start-1',
+    })).rejects.toThrow(/outside the configured user scope/);
+    expect(http.requests.map(({ request }) => request.method)).toEqual(['GET']);
+  });
+
+  it('refuses an unkeyed start_session on an existing session', async () => {
+    const http = transport({ body: { sessionId: 'session-1', ownerId: 'user-1', events: [] } });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    await expect(run(tools, 'start_session', { sessionId: 'session-1', actorId: 'user-1', text: 'Hello.' }))
+      .rejects.toThrow(/already exists/);
+    expect(http.requests.map(({ request }) => request.method)).toEqual(['GET']);
+  });
+
   it('uses the assistant as event actor while retaining the human session owner', async () => {
     const assistantEvent = event({ actorId: 'assistant-1', role: 'ASSISTANT' });
     const http = transport(
