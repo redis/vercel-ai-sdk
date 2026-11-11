@@ -516,6 +516,36 @@ describe('RedisAgentMemory toolset', () => {
     expect(result.event.eventId).toBe('event-1');
   });
 
+  it('returns the matching event when the creation event and a later append share a server timestamp', async () => {
+    const append = event({ eventId: 'event-2', actorId: 'assistant-1', role: 'ASSISTANT' });
+    const history = { sessionId: 'session-1', ownerId: 'user-1', events: [append, event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    const result = await run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', createdAt: timestamp, idempotencyKey: 'start-1',
+    });
+    expect(result.event.eventId).toBe('event-1');
+  });
+
+  it('refuses a keyed start_session replay that names a different namespace than the session', async () => {
+    const history = { sessionId: 'session-1', ownerId: 'user-1', namespaceId: 'notes-1', events: [event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    await expect(run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', idempotencyKey: 'start-1', namespaceId: 'other',
+    })).rejects.toThrow(/different namespace/);
+  });
+
+  it('replays a keyed start_session that names the session\'s namespace', async () => {
+    const history = { sessionId: 'session-1', ownerId: 'user-1', namespaceId: 'notes-1', events: [event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    const result = await run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', idempotencyKey: 'start-1', namespaceId: 'notes-1',
+    });
+    expect(result.event.eventId).toBe('event-1');
+  });
+
   it('refuses an unkeyed start_session on an existing session', async () => {
     const http = transport({ body: { sessionId: 'session-1', ownerId: 'user-1', events: [] } });
     const tools = toolsWith(http.fetch, { userId: 'user-1' });

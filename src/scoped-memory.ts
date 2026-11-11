@@ -221,14 +221,18 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
     input: SessionEventInput,
     options: ScopedMemoryRequestOptions,
   ) => {
-    const { events } = await client.getSessionMemory(sessionId, true, options);
+    const { events, namespaceId } = await client.getSessionMemory(sessionId, true, options);
+    if (input.namespaceId !== undefined && namespaceId !== input.namespaceId) {
+      fail('This session already exists in a different namespace than requested; use add_session_event.');
+    }
     // createdAt is caller-supplied and a later append may be backdated; systemTimestamp is the store's own clock.
-    const [first] = [...events].sort((a, b) => a.systemTimestamp.getTime() - b.systemTimestamp.getTime());
+    // The store gives events no creation marker, so every event tied for the earliest clock reading is a candidate.
+    const earliest = Math.min(...events.map(event => event.systemTimestamp.getTime()));
     const sameText = (event: SessionEvent) => event.content.length === input.content.length
       && event.content.every((part, index) => part.text === input.content[index]!.text);
-    const matches = first !== undefined && first.actorId === input.actorId && first.role === input.role && sameText(first)
-      && (input.createdAt === undefined || first.createdAt.getTime() === Date.parse(input.createdAt));
-    return matches ? first : undefined;
+    return events.find(event => event.systemTimestamp.getTime() === earliest
+      && event.actorId === input.actorId && event.role === input.role && sameText(event)
+      && (input.createdAt === undefined || event.createdAt.getTime() === Date.parse(input.createdAt)));
   };
 
   const appendSessionEvent = async (
