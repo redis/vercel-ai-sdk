@@ -103,7 +103,7 @@ Provenance is off by default.
 Existing underlying metadata is preserved; if it already owns `redisAgentMemory`, wrapper provenance is omitted.
 
 The wrapper is best effort, not exactly once.
-Redis Agent Memory has no conditional session creation or append idempotency key; a timed-out POST may have committed. Use collision-resistant session IDs bound to authenticated state and serialize requests by exact session ID.
+The wrapper sends no append idempotency key, so a timed-out POST may have committed. Use collision-resistant session IDs bound to authenticated state and serialize requests by exact session ID.
 Never combine automatic recording with session hooks or model-callable session-write tools for the same interaction.
 
 For streaming, nonterminal parts pass through as produced.
@@ -130,6 +130,8 @@ const memory = createRedisAgentMemory({
   model,
   allowDeletes,
   namespaceTools,
+  ingestionTools,
+  summaryViewTools,
   timeoutMs,
 });
 ```
@@ -142,7 +144,9 @@ const memory = createRedisAgentMemory({
 | `scope` | Optional default `{ userId?, sessionId?, namespaceId? }` |
 | `model` | Optional configured AI SDK model default; never a model-name string |
 | `allowDeletes` | `false`; exposes deletion tools when true |
-| `namespaceTools` | `false`; exposes namespace administration tools when true |
+| `namespaceTools` | `false`; exposes namespace administration and store-wide routing tools when true |
+| `ingestionTools` | `false`; exposes document ingestion and ingestion hook status tools when true |
+| `summaryViewTools` | `false`; exposes Summary View tools when true |
 | `timeoutMs` | `30000` per HTTP request; must be positive and finite |
 
 Scope accepts `userId`, `sessionId`, and `namespaceId`. Any other field, including the removed `namespace` label, throws instead of being ignored, so an unmigrated scope cannot silently lose its boundary.
