@@ -10,8 +10,12 @@ export interface SummaryViewToolOptions {
   allowDeletes: boolean;
 }
 
-/** read covers the definition, result reads, and partition refreshes; manage covers edits, full refreshes, and deletes. */
-type Access = 'none' | 'read' | 'manage';
+/**
+ * view covers the definition and result reads; read adds partition refreshes;
+ * manage adds edits, full refreshes, and deletes. Levels are listed weakest first.
+ */
+const LEVELS = ['none', 'view', 'read', 'manage'] as const;
+type Access = typeof LEVELS[number];
 type ScopedField = 'ownerId' | 'namespaceId';
 type FilterInput = NonNullable<z.infer<typeof s.search>['filter']>;
 
@@ -76,7 +80,7 @@ export function createSummaryViewTools(
   // The view ownerId is the API caller, not the application user, so access is proven from filter and groupBy.
   function access(view: SummaryView): Access {
     if (!ctx.hasResourceScope) return 'manage';
-    if (view.visibility !== 'PRIVATE') return 'none';
+    if (view.visibility !== 'PRIVATE' && view.visibility !== 'SHARED') return 'none';
     const viewFilter: LongTermMemoryFilter = view.filter ?? {};
     const conditions = Object.entries(viewFilter).filter(([key, value]) => key !== 'op' && value !== undefined).length;
     // The service default for op is not documented, so an implicit op only counts when nothing else could be ORed in.
@@ -90,17 +94,19 @@ export function createSummaryViewTools(
       if (!view.groupBy.includes(field)) return 'none';
       level = 'read';
     }
-    return level;
+    // Every store-authorized caller sees a SHARED view, so a scoped toolset reads its own partition but never changes the view.
+    return view.visibility === 'SHARED' ? 'view' : level;
   }
 
   async function assertView(id: string, needed: Exclude<Access, 'none'>, signal?: AbortSignal): Promise<SummaryView> {
     const view = await client.getSummaryView(id, { signal });
     const level = access(view);
     if (level === 'none') fail('Summary View is outside the configured user or namespace scope.');
-    if (needed === 'manage' && level !== 'manage') {
-      fail('This Summary View is shared across users or namespaces. Only views whose filter is pinned to the configured scope can be changed.');
+    if (LEVELS.indexOf(level) >= LEVELS.indexOf(needed)) return view;
+    if (view.visibility === 'SHARED') {
+      fail('A SHARED Summary View is read-only with a fixed user or namespace. Its definition and your partition can be read.');
     }
-    return view;
+    fail('This Summary View is shared across users or namespaces. Only views whose filter is pinned to the configured scope can be changed.');
   }
 
   function scopeFilter(input?: FilterInput): LongTermMemoryFilter | undefined {
@@ -123,8 +129,9 @@ export function createSummaryViewTools(
     list_summary_views: tool({
       description:
         'List Summary View definitions and their state. Summary text is not included; use get_summary_view_result for it. ' +
-        'Reuse nextCursor to fetch another page. With a fixed user or namespace, only PRIVATE views limited to that user ' +
-        'or namespace are listed, so a page can hold fewer items than limit.',
+        'Reuse nextCursor to fetch another page. With a fixed user or namespace, only views whose filter pins or whose ' +
+        'groupBy splits by that user and namespace are listed, so a page can hold fewer items than limit. ' +
+        'SHARED views among them are read-only.',
       inputSchema: z.object({ ...s.page }),
       execute: async ({ limit, cursor }, { abortSignal }) => {
         const result = await client.listSummaryViews(limit, cursor, { signal: abortSignal });
@@ -135,9 +142,9 @@ export function createSummaryViewTools(
     get_summary_view: tool({
       description:
         'Get one Summary View definition with its filter, groupBy, output, refresh policy, state, and definitionVersion. ' +
-        'With a fixed user or namespace, views outside that user or namespace are refused.',
+        'With a fixed user or namespace, views outside that user or namespace are refused. A SHARED view inside them can be read.',
       inputSchema: z.object({ viewId }),
-      execute: ({ viewId: id }, { abortSignal }) => assertView(id, 'read', abortSignal),
+      execute: ({ viewId: id }, { abortSignal }) => assertView(id, 'view', abortSignal),
     }),
 
     create_summary_view: tool({
@@ -179,8 +186,8 @@ export function createSummaryViewTools(
         'Change a Summary View. Source and visibility cannot change. Changes to filter, groupBy, time window, eviction, ' +
         'output, or refresh policy increment definitionVersion and refresh the view. Name and description changes do not. ' +
         'state switches the view between ACTIVE and DISABLED. filter and clearFilter cannot be combined, nor can ' +
-        'timeWindowSeconds and clearTimeWindow. With a fixed user or namespace, only views whose filter is pinned to that ' +
-        'user and namespace can change, a new filter is pinned the same way, and clearFilter is refused.',
+        'timeWindowSeconds and clearTimeWindow. With a fixed user or namespace, only PRIVATE views whose filter is pinned to ' +
+        'that user and namespace can change, a new filter is pinned the same way, and clearFilter is refused.',
       inputSchema: z.object({
         viewId,
         name: z.string().min(1).optional(),
@@ -213,7 +220,7 @@ export function createSummaryViewTools(
         'Queue a Summary View refresh. It runs asynchronously, so read the result later and check its status. ' +
         'PARTITION refreshes one exact partition. FULL reconciles every partition and takes no partition. ' +
         'With a fixed user or namespace, the partition is filled in with that user and namespace, other values are refused, ' +
-        'and FULL is allowed only on views whose filter is pinned to that user and namespace.',
+        'FULL is allowed only on views whose filter is pinned to that user and namespace, and SHARED views are refused.',
       inputSchema: z.object({ viewId, target: z.enum(['PARTITION', 'FULL']), partition: partition.optional() }),
       execute: async ({ viewId: id, target, partition: input }, { abortSignal }) => {
         if (target === 'FULL' && input !== undefined) fail('A FULL refresh takes no partition.');
@@ -233,14 +240,15 @@ export function createSummaryViewTools(
         'COLD, PENDING, and EMPTY have no value. READY and REFRESHING carry a value. FAILED keeps the last good value ' +
         'when one exists and reports errorCode. stale means the value lags its sources. truncated means some memories ' +
         'or content were left out. Invalid output is withheld while the service repairs it. ' +
-        'With a fixed user or namespace, the partition is filled in with that user and namespace and other values are refused.',
+        'With a fixed user or namespace, the partition is filled in with that user and namespace and other values are refused. ' +
+        'This also applies to SHARED views.',
       inputSchema: z.object({
         viewId,
         partition: partition.optional(),
         includeSourceMemoryIds: z.boolean().optional().describe('Also return the IDs of the summarized memories.'),
       }),
       execute: async ({ viewId: id, partition: input, includeSourceMemoryIds }, { abortSignal }) => {
-        const view = ctx.hasResourceScope ? await assertView(id, 'read', abortSignal) : undefined;
+        const view = ctx.hasResourceScope ? await assertView(id, 'view', abortSignal) : undefined;
         const resolved = resolvePartition(view, input) ?? {};
         return client.getSummaryViewResult(
           id, resolved.ownerId, resolved.sessionId, resolved.namespaceId, resolved.memoryType,
@@ -255,7 +263,7 @@ export function createSummaryViewTools(
       description:
         'Delete a Summary View on the user\'s explicit request. Deletion is asynchronous and safe to repeat. ' +
         'The view enters DELETING and its schedule and materialized summaries are removed. ' +
-        'With a fixed user or namespace, only views whose filter is pinned to that user and namespace can be deleted.',
+        'With a fixed user or namespace, only PRIVATE views whose filter is pinned to that user and namespace can be deleted.',
       inputSchema: z.object({ viewId }),
       execute: async ({ viewId: id }, { abortSignal }) => {
         if (ctx.hasResourceScope) await assertView(id, 'manage', abortSignal);

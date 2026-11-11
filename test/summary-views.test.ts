@@ -20,6 +20,9 @@ function view(overrides: Partial<SummaryView> = {}): SummaryView {
 const pinnedToUser = view({ viewId: 'pinned', filter: { ownerId: { eq: 'user-1' } } });
 const groupedByOwner = view({ viewId: 'grouped', groupBy: ['ownerId'] });
 const otherOwner = view({ viewId: 'other', filter: { ownerId: { eq: 'user-2' } } });
+const shared = view({ viewId: 'shared', visibility: 'SHARED', filter: { ownerId: { eq: 'user-1' } } });
+const sharedByOwner = view({ viewId: 'shared-grouped', visibility: 'SHARED', groupBy: ['ownerId'] });
+const sharedUnscoped = view({ viewId: 'shared-hidden', visibility: 'SHARED', groupBy: ['sessionId'] });
 
 function setup(scope: RedisAgentMemoryScope = {}, records: SummaryView[] = [], allowDeletes = true) {
   const stored = new Map(records.map(record => [record.viewId, record]));
@@ -107,17 +110,18 @@ describe('create_summary_view', () => {
 });
 
 describe('summary view visibility under a fixed scope', () => {
-  const shared = view({ viewId: 'shared', visibility: 'SHARED', filter: { ownerId: { eq: 'user-1' } } });
   const unpinned = view({ viewId: 'unpinned', groupBy: ['sessionId'] });
   const anyOp = view({ viewId: 'any', filter: { op: 'ANY', ownerId: { eq: 'user-1' }, topics: { eq: 'food' } } });
   const implicitOp = view({ viewId: 'implicit', filter: { ownerId: { eq: 'user-1' }, topics: { eq: 'food' } } });
   const explicitAll = view({ viewId: 'all', filter: { op: 'ALL', ownerId: { eq: 'user-1' }, topics: { eq: 'food' } } });
-  const records = [pinnedToUser, groupedByOwner, otherOwner, shared, unpinned, anyOp, implicitOp, explicitAll];
+  const records = [
+    pinnedToUser, groupedByOwner, otherOwner, shared, unpinned, anyOp, implicitOp, explicitAll, sharedByOwner, sharedUnscoped,
+  ];
 
   it('lists only views limited to the fixed user and keeps the cursor', async () => {
     const { tools, client } = setup({ userId: 'user-1' }, records);
     const result = await run(tools, 'list_summary_views', { limit: 10, cursor: 'page-2' });
-    expect(result.items.map((item: SummaryView) => item.viewId)).toEqual(['pinned', 'grouped', 'all']);
+    expect(result.items.map((item: SummaryView) => item.viewId)).toEqual(['pinned', 'grouped', 'shared', 'all', 'shared-grouped']);
     expect(result.nextCursor).toBe('next');
     expect(client.listSummaryViews.mock.calls[0]!.slice(0, 2)).toEqual([10, 'page-2']);
   });
@@ -127,9 +131,28 @@ describe('summary view visibility under a fixed scope', () => {
     expect((await run(tools, 'list_summary_views', {})).items).toHaveLength(records.length);
   });
 
-  it.each(['other', 'shared', 'unpinned', 'any', 'implicit'])('refuses to get view %s', async (viewId) => {
+  it.each(['other', 'unpinned', 'any', 'implicit', 'shared-hidden'])('refuses to get view %s', async (viewId) => {
     const { tools } = setup({ userId: 'user-1' }, records);
     await expect(run(tools, 'get_summary_view', { viewId })).rejects.toMatchObject(scopeRefusal);
+  });
+
+  it('gets a SHARED view the fixed user can read', async () => {
+    const { tools } = setup({ userId: 'user-1' }, records);
+    expect(await run(tools, 'get_summary_view', { viewId: 'shared' })).toEqual(shared);
+    expect(await run(tools, 'get_summary_view', { viewId: 'shared-grouped' })).toEqual(sharedByOwner);
+  });
+
+  it('keeps every SHARED view out of reach of changes, refreshes, and deletes', async () => {
+    const { tools, client } = setup({ userId: 'user-1' }, [shared, sharedByOwner]);
+    for (const viewId of ['shared', 'shared-grouped']) {
+      await expect(run(tools, 'update_summary_view', { viewId, name: 'Renamed' })).rejects.toMatchObject(scopeRefusal);
+      await expect(run(tools, 'refresh_summary_view', { viewId, target: 'FULL' })).rejects.toMatchObject(scopeRefusal);
+      await expect(run(tools, 'refresh_summary_view', { viewId, target: 'PARTITION' })).rejects.toMatchObject(scopeRefusal);
+      await expect(run(tools, 'delete_summary_view', { viewId })).rejects.toMatchObject(scopeRefusal);
+    }
+    expect(client.updateSummaryView).not.toHaveBeenCalled();
+    expect(client.refreshSummaryView).not.toHaveBeenCalled();
+    expect(client.deleteSummaryView).not.toHaveBeenCalled();
   });
 
   it('requires both fixed fields to be pinned or grouped', async () => {
@@ -166,6 +189,23 @@ describe('get_summary_view_result', () => {
     const { tools, client } = setup({ namespaceId: 'ns-1' }, [byNamespace]);
     await run(tools, 'get_summary_view_result', { viewId: 'by-ns', partition: { memoryType: 'semantic' } });
     expect(client.getSummaryViewResult.mock.calls[0]!.slice(0, 5)).toEqual(['by-ns', undefined, undefined, 'ns-1', 'semantic']);
+  });
+
+  it('forces the fixed owner partition on a SHARED view grouped by owner', async () => {
+    const { tools, client } = setup({ userId: 'user-1' }, [sharedByOwner]);
+    await run(tools, 'get_summary_view_result', { viewId: 'shared-grouped' });
+    expect(client.getSummaryViewResult.mock.calls[0]!.slice(0, 5))
+      .toEqual(['shared-grouped', 'user-1', undefined, undefined, undefined]);
+    await expect(run(tools, 'get_summary_view_result', {
+      viewId: 'shared-grouped', partition: { ownerId: 'user-2' },
+    })).rejects.toMatchObject(scopeRefusal);
+    expect(client.getSummaryViewResult).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a SHARED view with a fixed field neither pinned nor grouped', async () => {
+    const { tools, client } = setup({ userId: 'user-1' }, [sharedUnscoped]);
+    await expect(run(tools, 'get_summary_view_result', { viewId: 'shared-hidden' })).rejects.toMatchObject(scopeRefusal);
+    expect(client.getSummaryViewResult).not.toHaveBeenCalled();
   });
 
   it('refuses a view outside the fixed owner', async () => {
