@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
 export const id = z.string().min(1).max(255);
-export const sessionId = z.string().min(1).max(64).regex(/^[A-Za-z0-9-]+$/);
+export const sessionId = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
 export const memoryId = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
-export const ownerId =sessionId.describe('Stable application user identifier. Reuse it across conversations.');
+export const ownerId = z.string().min(1).max(64).regex(/^(?!\.\.?$)[A-Za-z0-9_+=.@-]+$/)
+  .describe('Stable application user identifier. Reuse it across conversations.');
 export const timestamp = z.iso.datetime({ offset: true });
 export const text = z.string().min(1).max(50_000);
 export const topics = z.array(z.string().min(1).max(100)).max(50);

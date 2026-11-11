@@ -249,7 +249,9 @@ The three deletion tools below are exposed only when `options.allowDeletes` is `
 
 `sessionId` is required for retrieval/deletion unless fixed in the scope.
 `role` is `USER`, `ASSISTANT`, or `SYSTEM`. `createdAt` accepts an ISO 8601 string with timezone and defaults to the current time.
-Session/owner IDs follow the server's 1–64 alphanumeric-or-hyphen convention; actor IDs accept 1–255 characters.
+Session IDs accept 1 to 64 letters, digits, underscores, or hyphens.
+Owner IDs accept 1 to 64 letters, digits, and `_+=.@-`, except `.` and `..`, so `user_42` and `alice@example.com` are valid.
+Actor IDs accept 1 to 255 characters.
 An `upsert_memory` ID accepts 1 to 64 letters, digits, underscores, or hyphens.
 `limit` accepts 1 to 100, except `list_sessions`, which accepts 1 to 1000.
 `start_session` fails when the named session already exists, except for a keyed retry that matches its first event.

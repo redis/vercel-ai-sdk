@@ -3,6 +3,7 @@ import type { AgentMemory } from "@redis-iris/agent-memory";
 import type { Namespace } from "@redis-iris/agent-memory/models";
 import { z } from "zod";
 import { RedisAgentMemoryToolError } from "./errors.js";
+import * as s from "./schemas.js";
 
 export interface NamespaceToolOptions {
   ownerId?: string;
@@ -88,7 +89,7 @@ export function createNamespaceTools(
       inputSchema: z.object({
         parentId: identifier.optional().describe("List direct children; omit to list roots."),
         scope: scopeSchema.optional().describe("Root scope. Cannot be combined with parentId."),
-        ownerId: identifier.optional().describe("Owner of PERSONAL roots. Cannot be combined with parentId."),
+        ownerId: s.ownerId.optional().describe("Owner of PERSONAL roots. Cannot be combined with parentId."),
         limit: z.number().int().min(1).max(1000).optional(),
         cursor: z.string().min(1).optional(),
         sortBy: z.enum(["id", "name", "createdAt", "updatedAt"]).optional().describe("Defaults to id."),
@@ -156,7 +157,7 @@ export function createNamespaceTools(
         path: z.string().min(1).optional(),
         scope: scopeSchema.optional(),
         parentId: identifier.optional(),
-        ownerId: identifier.optional(),
+        ownerId: s.ownerId.optional(),
       }),
       execute: async (input, { abortSignal }) => {
         if (options.namespaceId !== undefined) {

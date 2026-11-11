@@ -223,3 +223,30 @@ describe('provenance', () => {
     expect(requests).toHaveLength(0);
   });
 });
+
+describe('owner ID format', () => {
+  it.each(['user_42', 'alice@example.com', 'a+b=c.d-e'])('accepts %s as the fixed user', async (ownerId) => {
+    const requests = transport({ body: { items: [] } });
+    await run(tools({ userId: ownerId }), 'list_source_memories', { sourceId: 'src-1' });
+    expect(requests[0]!.url.searchParams.get('ownerId')).toBe(ownerId);
+  });
+
+  it.each(['user_42', 'alice@example.com'])('accepts %s as a tool input', async (ownerId) => {
+    const requests = transport({ body: { items: [] } });
+    await run(tools(), 'list_source_memories', { sourceId: 'src-1', ownerId });
+    expect(requests[0]!.url.searchParams.get('ownerId')).toBe(ownerId);
+  });
+
+  it.each(['.', '..', 'alice smith', 'a/b', 'x'.repeat(65)])('rejects %s before any request', async (ownerId) => {
+    const requests = transport();
+    expect(() => tools({ userId: ownerId })).toThrow();
+    await expect(run(tools(), 'list_source_memories', { sourceId: 'src-1', ownerId })).rejects.toThrow();
+    expect(requests).toHaveLength(0);
+  });
+
+  it('accepts an underscore in a session ID', async () => {
+    const requests = transport({ body: { sessionId: 'session_1', ownerId: 'user_42', events: [] } });
+    await run(tools({ userId: 'user_42', sessionId: 'session_1' }), 'get_session_memory', {});
+    expect(requests[0]!.url.pathname.endsWith('/sessions/session_1')).toBe(true);
+  });
+});

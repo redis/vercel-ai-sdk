@@ -52,7 +52,7 @@ const evictionPolicy = z.object({ maxPartitions: z.number().int().positive() })
 const timeWindowSeconds = z.number().int().positive().describe('Only summarize memories from this rolling window.');
 const filter = s.search.shape.filter.describe('Long-term memory filter that selects the source memories.');
 const partition = z.object({
-  ownerId: s.id.optional(), sessionId: s.id.optional(), namespaceId: s.id.optional(), memoryType: s.id.optional(),
+  ownerId: s.ownerId.optional(), sessionId: s.sessionId.optional(), namespaceId: s.id.optional(), memoryType: s.id.optional(),
 }).describe('One value for each groupBy field of the view. Omit for a view without groupBy.');
 const viewId = s.id.describe('Summary View ID, such as sv_ followed by 32 hex characters.');
 

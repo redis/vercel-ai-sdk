@@ -172,6 +172,14 @@ describe('get_summary_view_result', () => {
       .toEqual(['grouped', 'user-1', undefined, undefined, undefined, true]);
   });
 
+  it('accepts SDK owner IDs in a partition and rejects malformed ones before any request', async () => {
+    const { tools, client } = setup({ userId: 'alice@example.com' }, [groupedByOwner]);
+    await run(tools, 'get_summary_view_result', { viewId: 'grouped', partition: { ownerId: 'alice@example.com' } });
+    expect(client.getSummaryViewResult.mock.calls[0]!.slice(0, 2)).toEqual(['grouped', 'alice@example.com']);
+    await expect(run(tools, 'get_summary_view_result', { viewId: 'grouped', partition: { ownerId: '..' } })).rejects.toThrow();
+    expect(client.getSummaryViewResult).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses another owner partition', async () => {
     const { tools, client } = setup({ userId: 'user-1' }, [groupedByOwner]);
     await expect(run(tools, 'get_summary_view_result', { viewId: 'grouped', partition: { ownerId: 'user-2' } })).rejects.toMatchObject(scopeRefusal);
