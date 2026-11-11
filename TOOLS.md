@@ -196,7 +196,7 @@ Hook options are:
 | Option | Behavior |
 | --- | --- |
 | `role` | Required: `'USER'` for `onStart`, or `'ASSISTANT'` for `onEnd` |
-| `actorId` | Required author ID; must match scoped `userId` for USER events |
+| `actorId` | Required author ID of 1 to 64 letters, digits, or `_+=.@-`; must match scoped `userId` for USER events |
 | `onError(error, context)` | Required handler for validation or write failures; receives a sanitized `RedisAgentMemoryToolError` |
 | `onEventStart(info)` | Optional observer called before each append attempt |
 | `onEventSaved(info)` | Optional observer called after each confirmed append |
@@ -250,7 +250,8 @@ The three deletion tools below are exposed only when `options.allowDeletes` is `
 `sessionId` is required for retrieval/deletion unless fixed in the scope.
 `role` is `USER`, `ASSISTANT`, or `SYSTEM`. `createdAt` accepts an ISO 8601 string with timezone and defaults to the current time.
 Session IDs accept 1 to 64 letters, digits, underscores, or hyphens.
-Owner IDs accept 1 to 64 letters, digits, and `_+=.@-`, except `.` and `..`, so `user_42` and `alice@example.com` are valid.
+Owner IDs and actor IDs accept 1 to 64 letters, digits, and `_+=.@-`, except `.` and `..`, so `user_42` and `alice@example.com` are valid.
+The store enforces the same rule on every event's actor, so `createSessionEventHook`'s `actorId` and the model wrapper's `assistantId` follow it too.
 Actor IDs accept 1 to 255 characters.
 An `upsert_memory` ID accepts 1 to 64 letters, digits, underscores, or hyphens.
 `limit` accepts 1 to 100, except `list_sessions`, which accepts 1 to 1000.
@@ -327,7 +328,8 @@ Pass the memory's current `namespaceId`; omitting it asserts that the memory has
 
 `update_memory`, `upsert_memory`, and `update_memory_fields` accept `expectedRevision`.
 Read the current `revision` from `get_memory`.
-Per the tool descriptions, a stale revision fails with HTTP 412.
+A stale revision fails with HTTP 412, and the error tells the agent that nothing was written and to call `get_memory` for the current revision before retrying.
+HTTP 409 errors say that the resource exists or that the `idempotencyKey` was used for a different request.
 
 ### Memory provenance
 
@@ -398,7 +400,7 @@ Summary View, document ingestion, namespace routing, and automatic-routing tools
 This matches the existing long-term memory tools, which check ownership only under a `userId` or `namespaceId`.
 Set `userId` or `namespaceId` whenever `sessionId` must act as a write boundary.
 
-With a fixed session, `list_sessions` returns only that session.
+With a fixed session, `list_sessions` returns only that session, or nothing when a `namespaceId` filter names a different namespace than the session's.
 Without a fixed session, `list_sessions` needs an `ownerId`, a `namespaceId`, or explicit `includeAll: true`.
 A fixed `userId` supplies the owner, and a fixed `namespaceId` supplies the namespace.
 A `namespaceId` argument that differs from a fixed namespace is rejected.
@@ -574,7 +576,8 @@ Upstream headers, bodies, and API keys are not passed into model context.
 Cancellation is surfaced as `AbortError`.
 Bulk results retain partial errors so the agent can identify individual failures.
 An uncertain memory creation or session append can already have committed.
-Retry it with the same `idempotencyKey` and identical input, or reconcile its outcome before retrying without a key.
+Retry a memory write with the same `idempotencyKey` and identical input, or reconcile its outcome before retrying without a key.
+The store may not deduplicate session appends by key, so read the session with `get_session_memory` before retrying an uncertain `add_session_event`.
 Scope refusals use the code `INVALID_SCOPE`.
 
 Automatic summary/promotion behavior belongs to the Redis Agent Memory store configuration.

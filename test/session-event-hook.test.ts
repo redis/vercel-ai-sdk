@@ -128,7 +128,8 @@ describe('createSessionEventHook', () => {
     for (const options of [
       { role: 'USER', actorId: 'another-user', onError: vi.fn() },
       { role: 'ASSISTANT', actorId: '', onError: vi.fn() },
-      { role: 'ASSISTANT', actorId: 'x'.repeat(256), onError: vi.fn() },
+      { role: 'ASSISTANT', actorId: 'x'.repeat(65), onError: vi.fn() },
+      { role: 'ASSISTANT', actorId: 'has space', onError: vi.fn() },
       { role: 'SYSTEM', actorId: 'assistant-1', onError: vi.fn() },
       { role: 'ASSISTANT', actorId: 'assistant-1' },
       { role: 'ASSISTANT', actorId: 'assistant-1', onError: 'not a callback' },

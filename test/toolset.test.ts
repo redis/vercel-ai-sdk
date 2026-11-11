@@ -249,6 +249,21 @@ describe('RedisAgentMemory toolset', () => {
     });
   });
 
+  it('refuses a namespace filter that conflicts with a fixed session and namespace', async () => {
+    const http = transport();
+    const tools = toolsWith(http.fetch, { sessionId: 'session-1', namespaceId: 'notes-1' });
+    await expect(run(tools, 'list_sessions', { namespaceId: 'other' })).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
+    expect(http.requests).toHaveLength(0);
+  });
+
+  it('applies a namespace filter to a fixed session', async () => {
+    const session = { sessionId: 'session-1', ownerId: 'user-1', namespaceId: 'notes-1', events: [] };
+    const http = transport({ body: session }, { body: session });
+    const tools = toolsWith(http.fetch, { sessionId: 'session-1' });
+    expect((await run(tools, 'list_sessions', { namespaceId: 'other' })).items).toEqual([]);
+    expect((await run(tools, 'list_sessions', { namespaceId: 'notes-1' })).items).toHaveLength(1);
+  });
+
   it('uses the scoped user ID as the owner when listing sessions', async () => {
     const http = transport({ body: { items: [{ sessionId: 'session-1', ownerId: 'user-1' }] } });
     const tools = toolsWith(http.fetch, { userId: 'user-1' });
@@ -457,7 +472,7 @@ describe('RedisAgentMemory toolset', () => {
   });
 
   it('returns the first event for a keyed start_session retry after the first attempt created the session', async () => {
-    const reply = event({ eventId: 'event-2', actorId: 'assistant-1', role: 'ASSISTANT', createdAt: '2026-09-25T12:35:00.000Z' });
+    const reply = event({ eventId: 'event-2', actorId: 'assistant-1', role: 'ASSISTANT', createdAt: '2026-09-25T12:35:00.000Z', systemTimestamp: '2026-09-25T12:35:00.000Z' });
     const history = { sessionId: 'session-1', ownerId: 'user-1', events: [reply, event()] };
     const http = transport({ body: history }, { body: history });
     const tools = toolsWith(http.fetch, { userId: 'user-1' });
@@ -485,6 +500,20 @@ describe('RedisAgentMemory toolset', () => {
       sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', idempotencyKey: 'start-1',
     })).rejects.toThrow(/outside the configured user scope/);
     expect(http.requests.map(({ request }) => request.method)).toEqual(['GET']);
+  });
+
+  it('finds the creation event by server time when a later append is backdated', async () => {
+    const backdated = event({
+      eventId: 'event-2', actorId: 'assistant-1', role: 'ASSISTANT',
+      createdAt: '2020-01-01T00:00:00.000Z', systemTimestamp: '2026-09-25T13:00:00.000Z',
+    });
+    const history = { sessionId: 'session-1', ownerId: 'user-1', events: [backdated, event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    const result = await run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', createdAt: timestamp, idempotencyKey: 'start-1',
+    });
+    expect(result.event.eventId).toBe('event-1');
   });
 
   it('refuses an unkeyed start_session on an existing session', async () => {

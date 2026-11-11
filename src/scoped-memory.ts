@@ -222,7 +222,8 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
     options: ScopedMemoryRequestOptions,
   ) => {
     const { events } = await client.getSessionMemory(sessionId, true, options);
-    const [first] = [...events].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    // createdAt is caller-supplied and a later append may be backdated; systemTimestamp is the store's own clock.
+    const [first] = [...events].sort((a, b) => a.systemTimestamp.getTime() - b.systemTimestamp.getTime());
     const sameText = (event: SessionEvent) => event.content.length === input.content.length
       && event.content.every((part, index) => part.text === input.content[index]!.text);
     const matches = first !== undefined && first.actorId === input.actorId && first.role === input.role && sameText(first)

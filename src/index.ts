@@ -115,7 +115,7 @@ function buildTools(
     start_session: tool({
       description: 'Start a conversation with the user’s first event. Redis Agent Memory generates and returns a session ID when none is provided. Retain the returned ID. Fails when the named session already exists. With idempotencyKey, a retry whose actorId, text, and createdAt match the session’s first event returns that event instead.',
       inputSchema: z.object({
-        sessionId: s.sessionId.optional(), actorId: s.id, text: s.text,
+        sessionId: s.sessionId.optional(), actorId: s.actorId, text: s.text,
         createdAt: s.timestamp.optional().describe('ISO 8601 timestamp; defaults to the current time. Supply it with idempotencyKey so a retry sends the identical request.'),
         idempotencyKey: s.sessionIdempotencyKey.optional(), ...s.placement,
       }),
@@ -150,12 +150,13 @@ function buildTools(
         sortBy: z.enum(['sessionId', 'createdAt', 'updatedAt']).optional(), sortOrder: s.sortOrder.optional(),
       }),
       execute: async (input, { abortSignal }) => {
+        const { namespaceId } = place({ namespaceId: input.namespaceId });
         if (scope.sessionId) {
           if (input.ownerId && scope.userId && input.ownerId !== scope.userId) fail('Cannot override user scope.');
           const session = await assertSession(scope.sessionId, abortSignal);
+          if (namespaceId && session.namespaceId !== namespaceId) return { items: [] };
           return { items: [{ sessionId: session.sessionId, ownerId: session.ownerId, namespaceId: session.namespaceId }] };
         }
-        const { namespaceId } = place({ namespaceId: input.namespaceId });
         if (input.includeAll && (scope.userId || namespaceId || input.ownerId)) {
           fail('includeAll cannot be combined with a user or namespace scope, ownerId, or namespaceId.');
         }

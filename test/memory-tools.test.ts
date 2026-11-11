@@ -81,6 +81,45 @@ describe('sorting', () => {
   });
 });
 
+describe('actor IDs', () => {
+  const append = { sessionId: 'session-1', role: 'ASSISTANT', content: [{ text: 'Hi.' }] };
+
+  it.each(['has space', 'agent:v1', 'a/b', '..', '.', 'x'.repeat(65)])('rejects the actor ID %j before any request', async actorId => {
+    const requests = transport();
+    await expect(run(tools(), 'add_session_event', { ...append, actorId })).rejects.toThrow();
+    await expect(run(tools(), 'start_session', { actorId, text: 'Hello.' })).rejects.toThrow();
+    expect(requests).toHaveLength(0);
+  });
+
+  it('accepts the service\'s full actor ID alphabet', async () => {
+    const event = {
+      eventId: 'event-1', sessionId: 'session-1', actorId: 'agent_1.v2+x=y@z-1', role: 'ASSISTANT',
+      content: [{ text: 'Hi.' }], createdAt: timestamp, systemTimestamp: timestamp,
+    };
+    const requests = transport({ status: 201, body: { event } });
+    await run(tools(), 'add_session_event', { ...append, actorId: 'agent_1.v2+x=y@z-1' });
+    expect(requests[0]!.body.actorId).toBe('agent_1.v2+x=y@z-1');
+  });
+});
+
+describe('failure guidance', () => {
+  it('tells the agent how to recover from a stale revision', async () => {
+    transport({ status: 412, body: { title: 'Precondition Failed' } });
+    await expect(run(tools(), 'update_memory', {
+      memoryId: 'memory-1', changes: { text: 'Prefers tea.' }, expectedRevision: 'rev-1',
+    })).rejects.toMatchObject({
+      code: 'IRIS_HTTP_412', statusCode: 412, message: expect.stringMatching(/get_memory.*revision/is),
+    });
+  });
+
+  it('does not suggest a rejected write may have partially succeeded', async () => {
+    transport({ status: 412, body: {} });
+    await expect(run(tools(), 'update_memory', {
+      memoryId: 'memory-1', changes: { text: 'x' }, expectedRevision: 'rev-1',
+    })).rejects.toMatchObject({ message: expect.not.stringMatching(/partially succeeded/i) });
+  });
+});
+
 describe('idempotency', () => {
   it('replays a keyed memory batch with the same IDs and key', async () => {
     const requests = transport(created, created);

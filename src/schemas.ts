@@ -3,8 +3,10 @@ import { z } from 'zod';
 export const id = z.string().min(1).max(255);
 export const sessionId = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
 export const memoryId = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
-export const ownerId = z.string().min(1).max(64).regex(/^(?!\.\.?$)[A-Za-z0-9_+=.@-]+$/)
-  .describe('Stable application user identifier. Reuse it across conversations.');
+const principalId = z.string().min(1).max(64).regex(/^(?!\.\.?$)[A-Za-z0-9_+=.@-]+$/);
+export const ownerId = principalId.describe('Stable application user identifier. Reuse it across conversations.');
+export const actorId = principalId.describe(
+  'Author of this event: user ID for USER, agent ID for ASSISTANT. 1 to 64 letters, digits, or _+=.@-, and not . or ..');
 export const timestamp = z.iso.datetime({ offset: true });
 export const text = z.string().min(1).max(50_000);
 export const topics = z.array(z.string().min(1).max(100)).max(50);
@@ -22,7 +24,7 @@ export const sortOrder = z.enum(['ASC', 'DESC']);
 export const attributes = z.record(z.string(), z.unknown());
 export const event = z.object({
   sessionId: sessionId.optional().describe('Reuse the current session ID. Omit only to create a new session.'),
-  actorId: id.describe('Author of this event: user ID for USER, agent ID for ASSISTANT.'),
+  actorId,
   role: z.enum(['USER', 'ASSISTANT', 'SYSTEM']),
   content: z.array(z.object({ text })).min(1),
   createdAt: timestamp.optional().describe('ISO 8601 timestamp; defaults to the current time.'),
