@@ -90,7 +90,8 @@ describe('RedisAgentMemory toolset', () => {
     expect(Object.keys(tools)).toEqual([
       'get_memory_context', 'start_session', 'add_session_event', 'get_session_event',
       'get_session_memory', 'list_sessions', 'create_memories', 'get_memory',
-      'search_memories', 'update_memory',
+      'search_memories', 'update_memory', 'upsert_memory', 'update_memory_fields',
+      'list_memory_sources', 'list_memory_source_evidence', 'list_source_memories',
     ]);
     for (const definition of Object.values(tools)) {
       expect(definition).toHaveProperty('inputSchema');
@@ -114,11 +115,32 @@ describe('RedisAgentMemory toolset', () => {
     for (const name of ['delete_memories', 'delete_session_event', 'delete_session_memory']) {
       expect(tools[name] !== undefined).toBe(deletes);
     }
-    for (const name of ['list_namespaces', 'get_namespace', 'create_namespace', 'update_namespace', 'move_memories']) {
+    for (const name of [
+      'list_namespaces', 'get_namespace', 'create_namespace', 'update_namespace', 'move_memories',
+      'get_namespace_routing', 'put_namespace_routing',
+    ]) {
       expect(tools[name] !== undefined).toBe(namespaces);
     }
     expect(tools.delete_namespace !== undefined).toBe(deletes && namespaces);
     expect(await run(tools, 'get_memory_context', {})).toHaveProperty('allowDeletes', deletes);
+  });
+
+  it.each([
+    { options: undefined, ingestion: false, views: false, viewDeletes: false },
+    { options: { ingestionTools: true }, ingestion: true, views: false, viewDeletes: false },
+    { options: { summaryViewTools: true }, ingestion: false, views: true, viewDeletes: false },
+    { options: { summaryViewTools: true, allowDeletes: true }, ingestion: false, views: true, viewDeletes: true },
+  ])('exposes ingestion and Summary View tools only when enabled by $options', ({ options, ingestion, views, viewDeletes }) => {
+    const tools = makeTools(serverURL, 'store-1', apiKey, undefined, options);
+    for (const name of [
+      'create_document_ingestion', 'get_document_ingestion', 'list_document_ingestion_outputs',
+      'get_ingestion_hook_status', 'list_ingestion_hook_statuses',
+    ]) expect(tools[name] !== undefined).toBe(ingestion);
+    for (const name of [
+      'list_summary_views', 'get_summary_view', 'create_summary_view', 'update_summary_view',
+      'refresh_summary_view', 'get_summary_view_result',
+    ]) expect(tools[name] !== undefined).toBe(views);
+    expect(tools.delete_summary_view !== undefined).toBe(viewDeletes);
   });
 
   it('uses environment configuration when positional connection arguments are omitted', async () => {

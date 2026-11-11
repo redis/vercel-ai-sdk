@@ -32,6 +32,8 @@ function setup(options: Partial<NamespaceToolOptions> = {}, records: Namespace[]
     moveLongTermMemories: vi.fn(async (body: { memoryIds: string[] }, _options?: unknown) => ({
       moved: body.memoryIds,
     })),
+    getNamespaceRouting: vi.fn(async (..._args: unknown[]) => ({ policy: { enabled: false } })),
+    putNamespaceRouting: vi.fn(async (body: { policy: unknown }, _options?: unknown) => body),
   };
   const assertMemory = vi.fn(async (_id: string, _signal?: AbortSignal) => undefined);
   const tools = createNamespaceTools(client as unknown as AgentMemory, {
@@ -81,7 +83,7 @@ describe('namespace scope enforcement', () => {
     const { tools, client } = setup({ ownerId: 'user-1' });
     client.listNamespaces.mockResolvedValueOnce({ items: [namespace()], nextCursor: 'next' } as any);
     const result = await run(tools, 'list_namespaces', { limit: 20, cursor: 'previous' });
-    expect(client.listNamespaces).toHaveBeenCalledWith(undefined, 'PERSONAL', 'user-1', 20, 'previous', { signal: undefined });
+    expect(client.listNamespaces).toHaveBeenCalledWith(undefined, 'PERSONAL', 'user-1', 20, 'previous', { signal: undefined }, undefined, undefined);
     expect(result.nextCursor).toBe('next');
   });
 
@@ -91,7 +93,7 @@ describe('namespace scope enforcement', () => {
     const { tools, client } = setup({ ownerId: 'user-1' }, [root, child]);
     client.listNamespaces.mockResolvedValueOnce({ items: [child] });
     const result = await run(tools, 'list_namespaces', { parentId: 'root-1' });
-    expect(client.listNamespaces).toHaveBeenCalledWith('root-1', undefined, undefined, undefined, undefined, { signal: undefined });
+    expect(client.listNamespaces).toHaveBeenCalledWith('root-1', undefined, undefined, undefined, undefined, { signal: undefined }, undefined, undefined);
     expect(result.items).toEqual([child]);
   });
 
@@ -198,6 +200,63 @@ describe('namespace scope enforcement', () => {
     await expect(run(tools, 'move_memories', { namespaceId: 'root-1', memoryIds: ['memory-1'] })).rejects.toThrow();
     expect(assertMemory).not.toHaveBeenCalled();
     expect(client.moveLongTermMemories).not.toHaveBeenCalled();
+  });
+
+  it('passes namespace sort options through', async () => {
+    const { tools, client } = setup();
+    await run(tools, 'list_namespaces', { sortBy: 'name', sortOrder: 'DESC' });
+    expect(client.listNamespaces).toHaveBeenCalledWith(
+      undefined, undefined, undefined, undefined, undefined, { signal: undefined }, 'name', 'DESC');
+  });
+
+  it('routes memories automatically when the destination is omitted', async () => {
+    const { tools, client, assertMemory } = setup();
+    await run(tools, 'move_memories', { memoryIds: ['memory-1'] });
+    expect(client.getNamespace).not.toHaveBeenCalled();
+    expect(assertMemory).toHaveBeenCalledWith('memory-1', undefined);
+    expect(client.moveLongTermMemories).toHaveBeenCalledWith(
+      { memoryIds: ['memory-1'], namespaceId: undefined }, { signal: undefined });
+  });
+
+  it.each([{ ownerId: 'user-1' }, { namespaceId: 'root-1' }])(
+    'refuses automatic routing and routing policy tools with fixed scope %j', async (scope) => {
+      const { tools, client, assertMemory } = setup(scope);
+      await expect(run(tools, 'move_memories', { memoryIds: ['memory-1'] })).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
+      await expect(run(tools, 'get_namespace_routing', {})).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
+      await expect(run(tools, 'put_namespace_routing', { policy: { enabled: false } })).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
+      expect(assertMemory).not.toHaveBeenCalled();
+      expect(client.moveLongTermMemories).not.toHaveBeenCalled();
+      expect(client.getNamespaceRouting).not.toHaveBeenCalled();
+      expect(client.putNamespaceRouting).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reads and replaces the store-wide routing policy', async () => {
+    const { tools, client } = setup();
+    expect(await run(tools, 'get_namespace_routing', {})).toEqual({ policy: { enabled: false } });
+    const policy = {
+      enabled: true,
+      rules: [{
+        id: 'billing', destinationNamespaceId: 'ns_billing', enabled: true, action: 'ACCEPT',
+        strategies: [{ kind: 'MATCHER_SPEC', matcher: { kind: 'REGEX', regex: { pattern: 'invoice' } } }],
+      }],
+    };
+    await run(tools, 'put_namespace_routing', { policy });
+    expect(client.putNamespaceRouting).toHaveBeenCalledWith({ policy }, { signal: undefined });
+  });
+
+  it('rejects a routing strategy whose block does not match its kind', async () => {
+    const { tools, client } = setup();
+    await expect(run(tools, 'put_namespace_routing', {
+      policy: {
+        enabled: true,
+        rules: [{
+          id: 'billing', destinationNamespaceId: 'ns_billing', enabled: true, action: 'ACCEPT',
+          strategies: [{ kind: 'LLM_PROMPT', matcher: { kind: 'REGEX', regex: { pattern: 'invoice' } } }],
+        }],
+      },
+    })).rejects.toThrow();
+    expect(client.putNamespaceRouting).not.toHaveBeenCalled();
   });
 
   it('omits delete_namespace when deletion is disabled', () => {

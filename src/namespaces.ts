@@ -17,6 +17,30 @@ const namespaceName = z.string().min(1).refine((name) => !name.includes("/"), {
   message: "A namespace name is one path segment; use path to create a hierarchy.",
 });
 
+const routeCondition = z.object({
+  kind: z.enum(["LLM_PROMPT", "MATCHER_SPEC"]),
+  llmPrompt: z.object({ prompt: z.string().min(1) }).optional().describe("Required for LLM_PROMPT."),
+  matcher: z.object({
+    kind: z.literal("REGEX"),
+    regex: z.object({ pattern: z.string().min(1).describe("RE2 syntax. No lookaround or backreferences.") }),
+  }).optional().describe("Required for MATCHER_SPEC."),
+}).refine(
+  (condition) => condition.kind === "LLM_PROMPT"
+    ? condition.llmPrompt !== undefined && condition.matcher === undefined
+    : condition.matcher !== undefined && condition.llmPrompt === undefined,
+  { message: "Supply exactly the block that matches kind: llmPrompt for LLM_PROMPT, matcher for MATCHER_SPEC." },
+);
+const routingPolicy = z.object({
+  enabled: z.boolean(),
+  rules: z.array(z.object({
+    id: z.string().min(1).max(64),
+    destinationNamespaceId: identifier.describe("A shared namespace ID."),
+    enabled: z.boolean(),
+    action: z.enum(["ACCEPT", "REJECT"]),
+    strategies: z.array(routeCondition).optional(),
+  })).optional(),
+});
+
 /** Optional namespace administration tools. Access checks never trust model-supplied IDs. */
 export function createNamespaceTools(
   client: AgentMemory,
@@ -43,6 +67,12 @@ export function createNamespaceTools(
     }
   }
 
+  function assertStoreWide(message: string): void {
+    if (options.ownerId !== undefined || options.namespaceId !== undefined) {
+      throw new RedisAgentMemoryToolError("INVALID_SCOPE", `${message} Unavailable with a fixed user or namespace scope.`);
+    }
+  }
+
   async function assertNamespace(namespaceId: string, signal?: AbortSignal): Promise<Namespace> {
     assertNamespaceId(namespaceId);
     const result = await client.getNamespace(namespaceId, requestOptions(signal));
@@ -61,6 +91,8 @@ export function createNamespaceTools(
         ownerId: identifier.optional().describe("Owner of PERSONAL roots. Cannot be combined with parentId."),
         limit: z.number().int().min(1).max(1000).optional(),
         cursor: z.string().min(1).optional(),
+        sortBy: z.enum(["id", "name", "createdAt", "updatedAt"]).optional().describe("Defaults to id."),
+        sortOrder: z.enum(["ASC", "DESC"]).optional().describe("Defaults to ASC."),
       }),
       execute: async (input, { abortSignal }) => {
         if (options.namespaceId !== undefined) {
@@ -98,6 +130,8 @@ export function createNamespaceTools(
           input.limit,
           input.cursor,
           requestOptions(abortSignal),
+          input.sortBy,
+          input.sortOrder,
         );
         for (const namespace of result.items) await assertOwner(namespace, abortSignal);
         return result;
@@ -181,20 +215,48 @@ export function createNamespaceTools(
 
     move_memories: tool({
       description:
-        "Move existing long-term memories to an existing, active namespace. Supply known memory IDs and the " +
-        "destination namespace ID. Partial failures are returned in errors; inspect them before claiming success.",
+        "Move existing long-term memories to an active namespace, or omit namespaceId to re-route them by the " +
+        "store's routing policy. Automatic routing only applies to memories already in a shared namespace. " +
+        "Personal and unnamespaced memories keep their placement and get a per-item error. An explicit destination " +
+        "must pass admission and is never rerouted. Partial failures are returned in errors; inspect them before claiming success.",
       inputSchema: z.object({
         memoryIds: z.array(identifier).min(1).max(100),
-        namespaceId: identifier.describe("Destination namespace ID."),
+        namespaceId: identifier.optional().describe("Destination namespace ID. Omit for automatic routing."),
       }),
       execute: async ({ memoryIds, namespaceId }, { abortSignal }) => {
-        const namespace = await assertNamespace(namespaceId, abortSignal);
-        if (namespace.state !== "ACTIVE") throw new RedisAgentMemoryToolError("INVALID_SCOPE", "Cannot move memories into an archived namespace.");
+        if (namespaceId === undefined) {
+          assertStoreWide("Automatic routing can move memories outside the configured scope.");
+        } else {
+          const namespace = await assertNamespace(namespaceId, abortSignal);
+          if (namespace.state !== "ACTIVE") throw new RedisAgentMemoryToolError("INVALID_SCOPE", "Cannot move memories into an archived namespace.");
+        }
         for (const memoryId of memoryIds) await options.assertMemory(memoryId, abortSignal);
         return client.moveLongTermMemories(
           { memoryIds, namespaceId },
           requestOptions(abortSignal),
         );
+      },
+    }),
+
+    get_namespace_routing: tool({
+      description:
+        "Get the store-wide namespace routing policy. A store without a saved policy returns an empty disabled policy.",
+      inputSchema: z.object({}),
+      execute: async (_input, { abortSignal }) => {
+        assertStoreWide("Namespace routing is a store-wide policy.");
+        return client.getNamespaceRouting({}, requestOptions(abortSignal));
+      },
+    }),
+
+    put_namespace_routing: tool({
+      description:
+        "Replace the whole store-wide namespace routing policy. Read it with get_namespace_routing first and send " +
+        "every rule to keep. Rules only target shared namespaces. ACCEPT selects a destination; REJECT blocks one, " +
+        "even when a caller names it. Change routing only on an explicit administrator request.",
+      inputSchema: z.object({ policy: routingPolicy }),
+      execute: async ({ policy }, { abortSignal }) => {
+        assertStoreWide("Namespace routing is a store-wide policy.");
+        return client.putNamespaceRouting({ policy }, requestOptions(abortSignal));
       },
     }),
   };
