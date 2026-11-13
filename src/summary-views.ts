@@ -88,6 +88,9 @@ export function createSummaryViewTools(
     let level: Access = 'manage';
     for (const [field, value] of fixed) {
       const condition = viewFilter[field];
+      // A filter naming another user or namespace is that scope's view, even when it also groups by the field.
+      if (condition?.eq !== undefined && condition.eq !== value) return 'none';
+      if (condition?.in !== undefined && !condition.in.includes(value)) return 'none';
       const pinned = conjunctive && condition?.eq === value
         && Object.values(condition).filter(item => item !== undefined).length === 1;
       if (pinned) continue;

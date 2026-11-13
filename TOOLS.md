@@ -554,7 +554,7 @@ Each view gets one of four access levels:
 
 | Level | Condition | Allowed tools |
 | --- | --- | --- |
-| Hidden | A fixed field is neither pinned nor in `groupBy` | None; `list_summary_views` omits it, and the other tools refuse it |
+| Hidden | A fixed field is neither pinned nor in `groupBy`, or the filter names other values for it (`eq` differs, or `in` omits the fixed value) | None; `list_summary_views` omits it, and the other tools refuse it |
 | Read-only | The view is `SHARED`, and every fixed field that is not pinned is in `groupBy` | `get_summary_view` and `get_summary_view_result` |
 | Read | The view is `PRIVATE`, and every fixed field that is not pinned is in `groupBy` | The read-only tools, plus `refresh_summary_view` with `target: 'PARTITION'` |
 | Manage | The view is `PRIVATE`, and every fixed field is pinned | All read tools, plus `update_summary_view`, `refresh_summary_view` with `target: 'FULL'`, and `delete_summary_view` |

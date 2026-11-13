@@ -216,6 +216,24 @@ describe('get_summary_view_result', () => {
     expect(client.getSummaryViewResult).not.toHaveBeenCalled();
   });
 
+  it('hides a grouped view whose filter names another owner', async () => {
+    const otherGrouped = view({ viewId: 'other-grouped', groupBy: ['ownerId'], filter: { ownerId: { eq: 'user-2' } } });
+    const otherIn = view({ viewId: 'other-in', groupBy: ['ownerId'], filter: { ownerId: { in: ['user-2', 'user-3'] } } });
+    const { tools, client } = setup({ userId: 'user-1' }, [otherGrouped, otherIn]);
+    for (const viewId of ['other-grouped', 'other-in']) {
+      await expect(run(tools, 'get_summary_view', { viewId })).rejects.toMatchObject(scopeRefusal);
+      await expect(run(tools, 'get_summary_view_result', { viewId })).rejects.toMatchObject(scopeRefusal);
+    }
+    expect((await run(tools, 'list_summary_views', {})).items).toEqual([]);
+    expect(client.getSummaryViewResult).not.toHaveBeenCalled();
+  });
+
+  it('keeps a grouped view whose filter lists the fixed owner among others', async () => {
+    const listed = view({ viewId: 'listed', groupBy: ['ownerId'], filter: { ownerId: { in: ['user-1', 'user-2'] } } });
+    const { tools } = setup({ userId: 'user-1' }, [listed]);
+    expect(await run(tools, 'get_summary_view', { viewId: 'listed' })).toEqual(listed);
+  });
+
   it('refuses a view outside the fixed owner', async () => {
     const { tools, client } = setup({ userId: 'user-1' }, [otherOwner]);
     await expect(run(tools, 'get_summary_view_result', { viewId: 'other', partition: { ownerId: 'user-1' } })).rejects.toMatchObject(scopeRefusal);

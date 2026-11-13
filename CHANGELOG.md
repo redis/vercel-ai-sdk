@@ -22,6 +22,7 @@
 * `ownerId` accepts 1 to 64 letters, digits, and `_+=.@-` except `.` and `..`, and `sessionId` accepts underscores, matching the SDK.
 * `actorId` follows the `ownerId` rule, as the store enforces. This applies to `start_session`, `add_session_event`, `createSessionEventHook`, and the model wrapper's `assistantId`. Longer or differently punctuated IDs now fail validation before any request.
 * A stale `expectedRevision` (HTTP 412) and an HTTP 409 conflict now return recovery guidance instead of the generic configuration message.
+* A Summary View whose filter names other values for a fixed `userId` or `namespaceId` (`eq` differs, or `in` omits it) is hidden from a scoped toolset even when it groups by that field, so its definition no longer leaks.
 * `list_sessions` with a fixed `sessionId` validates `namespaceId` against a fixed namespace and returns no items when the filter names a different namespace than the session's.
 * A scope with only `sessionId` sets no owner or namespace boundary. Set `userId` or `namespaceId` when `sessionId` must act as a write boundary.
 
