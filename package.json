@@ -1,6 +1,6 @@
 {
   "name": "@redis/vercel-ai-sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "AI SDK tools for Redis Agent Memory: session history, persistent memories, and semantic search",
   "type": "module",
   "license": "MIT",
