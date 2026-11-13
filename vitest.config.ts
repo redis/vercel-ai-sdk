@@ -1,3 +1,4 @@
 import { defineConfig } from 'vitest/config';
 
-export default defineConfig({ test: { include: ['test/**/*.test.ts'] } });
+// Patterns resolve against --dir, so `vitest run --dir test` finds test/*.test.ts.
+export default defineConfig({ test: { include: ['**/*.test.ts'] } });
