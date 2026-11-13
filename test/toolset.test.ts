@@ -90,7 +90,8 @@ describe('RedisAgentMemory toolset', () => {
     expect(Object.keys(tools)).toEqual([
       'get_memory_context', 'start_session', 'add_session_event', 'get_session_event',
       'get_session_memory', 'list_sessions', 'create_memories', 'get_memory',
-      'search_memories', 'update_memory',
+      'search_memories', 'update_memory', 'upsert_memory', 'update_memory_fields',
+      'list_memory_sources', 'list_memory_source_evidence', 'list_source_memories',
     ]);
     for (const definition of Object.values(tools)) {
       expect(definition).toHaveProperty('inputSchema');
@@ -108,17 +109,41 @@ describe('RedisAgentMemory toolset', () => {
     { options: { allowDeletes: true }, deletes: true, namespaces: false },
     { options: { namespaceTools: true }, deletes: false, namespaces: true },
     { options: { allowDeletes: true, namespaceTools: true }, deletes: true, namespaces: true },
-  ])('exposes only the tools enabled by $options', async ({ options, deletes, namespaces }) => {
+    { options: { namespaceTools: true, routingPolicyWrites: true }, deletes: false, namespaces: true, routingWrites: true },
+    { options: { routingPolicyWrites: true }, deletes: false, namespaces: false, routingWrites: false },
+  ])('exposes only the tools enabled by $options', async ({ options, deletes, namespaces, routingWrites = false }) => {
     const tools = makeTools(serverURL, 'store-1', apiKey, undefined, options);
     expect(tools.search_memories).toBeDefined();
     for (const name of ['delete_memories', 'delete_session_event', 'delete_session_memory']) {
       expect(tools[name] !== undefined).toBe(deletes);
     }
-    for (const name of ['list_namespaces', 'get_namespace', 'create_namespace', 'update_namespace', 'move_memories']) {
+    for (const name of [
+      'list_namespaces', 'get_namespace', 'create_namespace', 'update_namespace', 'move_memories',
+      'get_namespace_routing',
+    ]) {
       expect(tools[name] !== undefined).toBe(namespaces);
     }
+    expect(tools.put_namespace_routing !== undefined).toBe(routingWrites);
     expect(tools.delete_namespace !== undefined).toBe(deletes && namespaces);
     expect(await run(tools, 'get_memory_context', {})).toHaveProperty('allowDeletes', deletes);
+  });
+
+  it.each([
+    { options: undefined, ingestion: false, views: false, viewDeletes: false },
+    { options: { ingestionTools: true }, ingestion: true, views: false, viewDeletes: false },
+    { options: { summaryViewTools: true }, ingestion: false, views: true, viewDeletes: false },
+    { options: { summaryViewTools: true, allowDeletes: true }, ingestion: false, views: true, viewDeletes: true },
+  ])('exposes ingestion and Summary View tools only when enabled by $options', ({ options, ingestion, views, viewDeletes }) => {
+    const tools = makeTools(serverURL, 'store-1', apiKey, undefined, options);
+    for (const name of [
+      'create_document_ingestion', 'get_document_ingestion', 'list_document_ingestion_outputs',
+      'get_ingestion_hook_status', 'list_ingestion_hook_statuses',
+    ]) expect(tools[name] !== undefined).toBe(ingestion);
+    for (const name of [
+      'list_summary_views', 'get_summary_view', 'create_summary_view', 'update_summary_view',
+      'refresh_summary_view', 'get_summary_view_result',
+    ]) expect(tools[name] !== undefined).toBe(views);
+    expect(tools.delete_summary_view !== undefined).toBe(viewDeletes);
   });
 
   it('uses environment configuration when positional connection arguments are omitted', async () => {
@@ -225,6 +250,21 @@ describe('RedisAgentMemory toolset', () => {
     expect(http.requests[0]!.body.filter).toEqual({
       op: 'ALL', ownerId: { eq: 'user-1' }, topics: { in: ['preferences'] },
     });
+  });
+
+  it('refuses a namespace filter that conflicts with a fixed session and namespace', async () => {
+    const http = transport();
+    const tools = toolsWith(http.fetch, { sessionId: 'session-1', namespaceId: 'notes-1' });
+    await expect(run(tools, 'list_sessions', { namespaceId: 'other' })).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
+    expect(http.requests).toHaveLength(0);
+  });
+
+  it('applies a namespace filter to a fixed session', async () => {
+    const session = { sessionId: 'session-1', ownerId: 'user-1', namespaceId: 'notes-1', events: [] };
+    const http = transport({ body: session }, { body: session });
+    const tools = toolsWith(http.fetch, { sessionId: 'session-1' });
+    expect((await run(tools, 'list_sessions', { namespaceId: 'other' })).items).toEqual([]);
+    expect((await run(tools, 'list_sessions', { namespaceId: 'notes-1' })).items).toHaveLength(1);
   });
 
   it('uses the scoped user ID as the owner when listing sessions', async () => {
@@ -432,6 +472,89 @@ describe('RedisAgentMemory toolset', () => {
       actorId: 'user-1', role: 'ASSISTANT', content: [{ text: 'Hello.' }],
     })).rejects.toThrow();
     expect(http.requests).toHaveLength(0);
+  });
+
+  it('returns the first event for a keyed start_session retry after the first attempt created the session', async () => {
+    const reply = event({ eventId: 'event-2', actorId: 'assistant-1', role: 'ASSISTANT', createdAt: '2026-09-25T12:35:00.000Z', systemTimestamp: '2026-09-25T12:35:00.000Z' });
+    const history = { sessionId: 'session-1', ownerId: 'user-1', events: [reply, event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    const result = await run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', createdAt: timestamp, idempotencyKey: 'start-1',
+    });
+    expect(result.event).toMatchObject({ eventId: 'event-1', sessionId: 'session-1', actorId: 'user-1', role: 'USER' });
+    expect(http.requests.map(({ request }) => request.method)).toEqual(['GET', 'GET']);
+  });
+
+  it('refuses a keyed start_session whose request differs from the existing first event', async () => {
+    const history = { sessionId: 'session-1', ownerId: 'user-1', events: [event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    await expect(run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Something else.', idempotencyKey: 'start-1',
+    })).rejects.toThrow(/first event differs/);
+    expect(http.requests.map(({ request }) => request.method)).toEqual(['GET', 'GET']);
+  });
+
+  it('refuses a keyed start_session on another owner\'s session before any write', async () => {
+    const http = transport({ body: { sessionId: 'session-1', ownerId: 'another-user', events: [] } });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    await expect(run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', idempotencyKey: 'start-1',
+    })).rejects.toThrow(/outside the configured user scope/);
+    expect(http.requests.map(({ request }) => request.method)).toEqual(['GET']);
+  });
+
+  it('finds the creation event by server time when a later append is backdated', async () => {
+    const backdated = event({
+      eventId: 'event-2', actorId: 'assistant-1', role: 'ASSISTANT',
+      createdAt: '2020-01-01T00:00:00.000Z', systemTimestamp: '2026-09-25T13:00:00.000Z',
+    });
+    const history = { sessionId: 'session-1', ownerId: 'user-1', events: [backdated, event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    const result = await run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', createdAt: timestamp, idempotencyKey: 'start-1',
+    });
+    expect(result.event.eventId).toBe('event-1');
+  });
+
+  it('returns the matching event when the creation event and a later append share a server timestamp', async () => {
+    const append = event({ eventId: 'event-2', actorId: 'assistant-1', role: 'ASSISTANT' });
+    const history = { sessionId: 'session-1', ownerId: 'user-1', events: [append, event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    const result = await run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', createdAt: timestamp, idempotencyKey: 'start-1',
+    });
+    expect(result.event.eventId).toBe('event-1');
+  });
+
+  it('refuses a keyed start_session replay that names a different namespace than the session', async () => {
+    const history = { sessionId: 'session-1', ownerId: 'user-1', namespaceId: 'notes-1', events: [event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    await expect(run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', idempotencyKey: 'start-1', namespaceId: 'other',
+    })).rejects.toThrow(/different namespace/);
+  });
+
+  it('replays a keyed start_session that names the session\'s namespace', async () => {
+    const history = { sessionId: 'session-1', ownerId: 'user-1', namespaceId: 'notes-1', events: [event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    const result = await run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', idempotencyKey: 'start-1', namespaceId: 'notes-1',
+    });
+    expect(result.event.eventId).toBe('event-1');
+  });
+
+  it('refuses an unkeyed start_session on an existing session', async () => {
+    const http = transport({ body: { sessionId: 'session-1', ownerId: 'user-1', events: [] } });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    await expect(run(tools, 'start_session', { sessionId: 'session-1', actorId: 'user-1', text: 'Hello.' }))
+      .rejects.toThrow(/already exists/);
+    expect(http.requests.map(({ request }) => request.method)).toEqual(['GET']);
   });
 
   it('uses the assistant as event actor while retaining the human session owner', async () => {

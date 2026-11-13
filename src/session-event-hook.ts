@@ -86,7 +86,7 @@ export function createSessionEventHook<Role extends SessionRole>(
   if (typeof options?.onError !== 'function') throw new Error('createSessionEventHook requires an onError callback.');
   const { role, onError, onEventStart, onEventSaved } = options;
   if (role !== 'USER' && role !== 'ASSISTANT') throw new Error('createSessionEventHook requires role USER or ASSISTANT.');
-  const actorId = s.id.parse(options.actorId);
+  const actorId = s.actorId.parse(options.actorId);
   if (role === 'USER' && actorId !== scope.userId) {
     throw new RedisAgentMemoryToolError('INVALID_SCOPE', 'USER session event actorId must match scope.userId.');
   }

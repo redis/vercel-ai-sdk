@@ -397,7 +397,7 @@ export function createRedisAgentMemoryModel(
   let assistantId: string | undefined;
   if (recording) {
     if (!scope.sessionId) throw providerError('INVALID_CONFIGURATION', 'Recording requires scope.sessionId.');
-    try { assistantId = s.id.parse(options.assistantId); }
+    try { assistantId = s.actorId.parse(options.assistantId); }
     catch { throw providerError('INVALID_CONFIGURATION', 'Recording requires a valid assistantId.'); }
   }
   const scoped = createScopedMemory(client, scope);

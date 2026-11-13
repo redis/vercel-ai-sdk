@@ -1,5 +1,5 @@
 import { AgentMemory } from '@redis-iris/agent-memory';
-import type { LongTermMemoryFilter } from '@redis-iris/agent-memory/models';
+import type { LongTermMemoryFilter, SessionEvent } from '@redis-iris/agent-memory/models';
 import type { z } from 'zod';
 import { RedisAgentMemoryToolError } from './errors.js';
 import * as s from './schemas.js';
@@ -22,7 +22,7 @@ type SearchInput = NonNullable<Parameters<AgentMemory['searchLongTermMemory']>[0
 type Placement = { namespaceId?: string };
 
 export interface AppendSessionEventOptions extends ScopedMemoryRequestOptions {
-  /** Reject when the named session already exists. Used by the legacy start_session tool. */
+  /** Create the session. An existing one is refused unless the request is keyed and matches its first event. */
   start?: boolean;
   /** Re-read a session created by this append to verify its immutable owner and placement. */
   postflightNewSession?: boolean;
@@ -216,6 +216,25 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
     return result;
   };
 
+  const findStartEvent = async (
+    sessionId: string,
+    input: SessionEventInput,
+    options: ScopedMemoryRequestOptions,
+  ) => {
+    const { events, namespaceId } = await client.getSessionMemory(sessionId, true, options);
+    if (input.namespaceId !== undefined && namespaceId !== input.namespaceId) {
+      fail('This session already exists in a different namespace than requested; use add_session_event.');
+    }
+    // createdAt is caller-supplied and a later append may be backdated; systemTimestamp is the store's own clock.
+    // The store gives events no creation marker, so every event tied for the earliest clock reading is a candidate.
+    const earliest = Math.min(...events.map(event => event.systemTimestamp.getTime()));
+    const sameText = (event: SessionEvent) => event.content.length === input.content.length
+      && event.content.every((part, index) => part.text === input.content[index]!.text);
+    return events.find(event => event.systemTimestamp.getTime() === earliest
+      && event.actorId === input.actorId && event.role === input.role && sameText(event)
+      && (input.createdAt === undefined || event.createdAt.getTime() === Date.parse(input.createdAt)));
+  };
+
   const appendSessionEvent = async (
     input: SessionEventInput,
     options: AppendSessionEventOptions = {},
@@ -234,7 +253,13 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
         try {
           await assertSession(sessionId, requestOptions, validateResponse);
           throwIfAborted(requestSignal);
-          if (start) fail('This session already exists; use add_session_event.');
+          if (start) {
+            if (!input.idempotencyKey) fail('This session already exists; use add_session_event.');
+            // The store answers a repeated createSession with 409 even for the same key, so the replay happens here.
+            const first = await findStartEvent(sessionId, input, requestOptions);
+            if (!first) fail('This session already exists and its first event differs from this request; use add_session_event.');
+            return { event: first };
+          }
         } catch (error) {
           if (memoryErrorStatus(error) !== 404) throw error;
           newSession = true;

@@ -196,7 +196,7 @@ Hook options are:
 | Option | Behavior |
 | --- | --- |
 | `role` | Required: `'USER'` for `onStart`, or `'ASSISTANT'` for `onEnd` |
-| `actorId` | Required author ID; must match scoped `userId` for USER events |
+| `actorId` | Required author ID of 1 to 64 letters, digits, or `_+=.@-`; must match scoped `userId` for USER events |
 | `onError(error, context)` | Required handler for validation or write failures; receives a sanitized `RedisAgentMemoryToolError` |
 | `onEventStart(info)` | Optional observer called before each append attempt |
 | `onEventSaved(info)` | Optional observer called after each confirmed append |
@@ -211,6 +211,7 @@ The two hooks run independently.
 A USER save failure does not stop generation or prevent the ASSISTANT hook from running.
 A failed write may have committed without confirmation, so the assistant event may still be appended afterward.
 Ownership checks still prevent an ASSISTANT event from starting a new user-owned session.
+Hooks send no `idempotencyKey`.
 Writes are not atomic, retried, or deduplicated; verify uncertain outcomes before retrying and register each hook only once per generation.
 AI SDK ignores lifecycle callback exceptions, so report failures through `onError`.
 To require persistence before proceeding with generation or returning a reply, use the official SDK in the application workflow.
@@ -228,22 +229,33 @@ The three deletion tools below are exposed only when `options.allowDeletes` is `
 | Tool | Parameters and result |
 | --- | --- |
 | `get_memory_context` | `{}` → configured IDs and identity rules, no secrets |
-| `start_session` | `{actorId, text, sessionId?, namespaceId?}` → `{event}`; omit sessionId to have it generated |
-| `add_session_event` | `{actorId, role, content: [{text}], sessionId?, createdAt?, metadata?, namespaceId?}` → `{event}` |
+| `start_session` | `{actorId, text, sessionId?, createdAt?, idempotencyKey?, namespaceId?}` → `{event}`; omit sessionId to have it generated |
+| `add_session_event` | `{actorId, role, content: [{text}], sessionId?, createdAt?, metadata?, idempotencyKey?, namespaceId?}` → `{event}` |
 | `get_session_event` | `{sessionId?, eventId}` → `{event}` |
 | `get_session_memory` | `{sessionId?, includeSummarisedEvents?}` → session, events, optional summary |
-| `list_sessions` | `{ownerId?, includeAll?, limit?, cursor?}` → `{items: [{sessionId, ownerId?, ...}], nextCursor?}` |
-| `create_memories` | `{memories: [...]}` without IDs → `{memoryIds, created, errors?}`; UUIDs are generated automatically |
-| `get_memory` | `{memoryId}` → memory record |
-| `search_memories` | `{query?, filter?, minScore?, limit?, cursor?}` → `{items, nextCursor?}` |
-| `update_memory` | `{memoryId, changes: {...}}` → updated memory record |
+| `list_sessions` | `{ownerId?, namespaceId?, includeAll?, limit?, cursor?, sortBy?, sortOrder?}` → `{items: [{sessionId, ownerId?, ...}], nextCursor?}` |
+| `create_memories` | `{memories: [...], idempotencyKey?}` without IDs → `{memoryIds, created, errors?}`; IDs are generated automatically |
+| `get_memory` | `{memoryId}` → memory record with `revision`, first source links, and `documentManaged` |
+| `search_memories` | `{query?, filter?, minScore?, limit?, cursor?, sortBy?, sortOrder?, excludeDocumentManaged?}` → `{items, nextCursor?}` |
+| `update_memory` | `{memoryId, changes: {...}, expectedRevision?, idempotencyKey?}` → updated memory record |
+| `upsert_memory` | `{memoryId, text, ownerId?, sessionId?, memoryType?, topics?, attributes?, namespaceId?, expectedRevision?, idempotencyKey?}` → memory record |
+| `update_memory_fields` | `{memoryId, memoryType, text?, attributes?, namespaceId?, expectedRevision?, idempotencyKey?}` → `{updated: true, memoryId}` |
+| `list_memory_sources` | `{memoryId, limit?, cursor?}` → source links with `nextCursor?` |
+| `list_memory_source_evidence` | `{memoryId, sourceId, limit?, cursor?}` → evidence with `nextCursor?` |
+| `list_source_memories` | `{sourceId, ownerId?, limit?, cursor?}` → memories with `nextCursor?` |
 | `delete_memories` | `{memoryIds: [...]}` → `{deleted, errors?}` |
 | `delete_session_event` | `{sessionId?, eventId}` → deletion confirmation |
 | `delete_session_memory` | `{sessionId?}` → deletion confirmation |
 
 `sessionId` is required for retrieval/deletion unless fixed in the scope.
 `role` is `USER`, `ASSISTANT`, or `SYSTEM`. `createdAt` accepts an ISO 8601 string with timezone and defaults to the current time.
-Session/owner IDs follow the server's 1–64 alphanumeric-or-hyphen convention; actor IDs accept 1–255 characters.
+Session IDs accept 1 to 64 letters, digits, underscores, or hyphens.
+Owner IDs and actor IDs accept 1 to 64 letters, digits, and `_+=.@-`, except `.` and `..`, so `user_42` and `alice@example.com` are valid.
+The store enforces the same rule on every event's actor, so `createSessionEventHook`'s `actorId` and the model wrapper's `assistantId` follow it too.
+Actor IDs accept 1 to 255 characters.
+An `upsert_memory` ID accepts 1 to 64 letters, digits, underscores, or hyphens.
+`limit` accepts 1 to 100, except `list_sessions`, which accepts 1 to 1000.
+`start_session` fails when the named session already exists, except for a keyed retry that matches its first event.
 
 A create record contains:
 
@@ -259,19 +271,78 @@ A create record contains:
 }
 ```
 
-The wrapper generates a UUID v4 for each create record.
+The wrapper generates an ID for each create record.
 The agent does not supply an `id`.
-The returned `memoryIds` array lists all generated IDs in input order, including any failed records; `created` contains successful IDs and `errors` contains per-ID failures.
+Without an `idempotencyKey`, the returned `memoryIds` array lists all generated IDs in input order, including any failed records.
+With an `idempotencyKey`, the IDs are derived from the key, so a retry replays the same request, and `memoryIds` lists only the records the service created.
+In both cases `created` contains successful IDs and `errors` contains per-ID failures.
 Keep successful IDs for later retrieval, updates, and deletion.
-
-Each `create_memories` invocation generates fresh IDs.
-If a request times out or its outcome is uncertain, search for the memories before retrying to avoid duplicates.
-Retry only records confirmed to have failed.
 
 Bulk create/delete accepts 1–100 records/IDs and preserves the server's per-record errors.
 Text accepts 1–50,000 characters; topics accept up to 50 tags.
-Updates support `text`, `memoryType`, `topics`, `ownerId`, `sessionId`, and namespace placement.
-An empty `sessionId` clears it when not fixed by scope. Updating custom extraction-worker fields is deliberately outside the agent toolset; use the official SDK's worker endpoint for that workflow.
+
+### Retries and idempotency keys
+
+`start_session`, `add_session_event`, `create_memories`, `update_memory`, `upsert_memory`, and `update_memory_fields` accept an optional `idempotencyKey` of 1 to 255 characters.
+The tools pass it to Redis Agent Memory unchanged.
+For memory writes, a retry that reuses the key with the identical request replays the saved result, and the same key with a different request fails with HTTP 409.
+A store that selects an input hook requires the key, and a write without it fails.
+
+To retry an uncertain memory write, send the identical request with the same key.
+Session events are different.
+The store may not deduplicate `add_session_event` by the key, so an identical keyed retry can append a second event.
+After an uncertain append, read the session with `get_session_memory` before retrying.
+
+Without a key, each `create_memories` call generates fresh UUID v4 IDs.
+If a request times out or its outcome is uncertain, search for the memories before retrying to avoid duplicates.
+Retry only records confirmed to have failed.
+
+With a key, `create_memories` derives each ID from the key, the record's owner, and the record's position in the batch.
+The ID is 32 lowercase hex characters.
+A retry with the same key, the same records, and the same order produces the same IDs, so the server can replay the saved result.
+Reordering the records or changing an owner changes the IDs.
+
+The tools do not retry or deduplicate writes without a key.
+`start_session` with a named `sessionId` checks first that the session does not exist.
+The store refuses to create an existing session even with the same key, so the tool handles a keyed retry itself.
+When the session exists, passes the scope checks, and its first event matches the request's `actorId`, role, text, and any `createdAt`, the tool returns that event without writing.
+Otherwise, and always without a key, the retry fails with that check.
+For a matching retry, send the same `createdAt` as the first attempt.
+
+### Updates and revisions
+
+`update_memory` changes only the fields in `changes`: `text`, `memoryType`, `topics`, `ownerId`, `sessionId`, and namespace placement.
+Omitted fields stay unchanged.
+An empty `sessionId` clears it when not fixed by scope.
+Per the tool description, a document-managed memory accepts only namespace changes.
+
+`upsert_memory` creates a memory under the given ID, or fully replaces the memory with that ID.
+Omitted optional fields are cleared, and `memoryType` defaults to `semantic`.
+Read the memory with `get_memory` first and send every field to keep.
+Per the tool description, document-managed memories cannot be replaced.
+
+`update_memory_fields` changes the `text`, the `attributes`, or both of a custom-typed memory.
+It requires at least one of them.
+`memoryType` must match the stored type.
+Pass the memory's current `namespaceId`; omitting it asserts that the memory has no namespace.
+
+`update_memory`, `upsert_memory`, and `update_memory_fields` accept `expectedRevision`.
+Read the current `revision` from `get_memory`.
+A stale revision fails with HTTP 412, and the error tells the agent that nothing was written and to call `get_memory` for the current revision before retrying.
+HTTP 409 errors say that the resource exists or that the `idempotencyKey` was used for a different request.
+
+### Memory provenance
+
+`list_memory_sources` lists where a memory came from: document revisions or sessions, with their first evidence.
+`list_memory_source_evidence` pages the extraction evidence for one source of that memory, such as document chunks or session event IDs.
+Evidence shows the input given to extraction, not a citation for the fact.
+`list_source_memories` lists one owner's memories derived from a source.
+Get `sourceId` from `list_memory_sources`.
+
+`list_source_memories` requires `ownerId` unless the scope fixes `userId`.
+It refuses a result that contains another owner's memory.
+With a fixed namespace, it omits memories outside that namespace, so a page can hold fewer items than `limit`.
+With a fixed user or namespace, `list_memory_sources` and `list_memory_source_evidence` check the memory's owner and placement first.
 
 Search filters support `ownerId`, `sessionId`, `topics`, and `memoryType` with exactly one of `{eq}`, `{ne}`, `{in: [...]}`, or `{all: [...]}`.
 `namespaceId` supports `{eq}` or `{in}`. Use `unnamespaced` without namespace selectors. Date comparisons accept ISO strings:
@@ -293,6 +364,12 @@ Search filters support `ownerId`, `sessionId`, `topics`, and `memoryType` with e
 Attribute filters accept exactly one of `{string}`, `{number}`, `{boolean}`, or `{list: string[]}` per field.
 Omit `query` to list/filter without a semantic query.
 Pagination uses the returned opaque `nextCursor` with the same search parameters.
+
+`sortBy` (`createdAt` or `updatedAt`) and `sortOrder` (`ASC` or `DESC`) order a filter-only listing.
+The tool rejects either one combined with `query`.
+`excludeDocumentManaged: true` omits memories produced by document ingestion.
+
+`list_sessions` sorts by `sessionId`, `createdAt`, or `updatedAt`, with the same `sortOrder` values.
 
 ## Identity and scope behavior
 
@@ -317,9 +394,19 @@ User/namespace-scoped searches require `filter.op: 'ALL'`; an OR filter could by
 Direct-ID reads, updates, and deletes check existing ownership/placement before returning or mutating a resource.
 User-scoped resource placements require a PERSONAL namespace owned by that user.
 
-With a fixed session, `list_sessions` returns only that session.
-With a namespace scope and no fixed session, `list_sessions` filters by that `namespaceId` (no owner or `includeAll` needed; `includeAll` is rejected because the service does not allow it alongside a filter) and rejects any returned session outside it.
-Unscoped store-wide listing requires explicit `includeAll: true`.
+A scope with only `sessionId` fixes the session for session tools but sets no owner or namespace boundary.
+Without a fixed `userId` or `namespaceId`, `upsert_memory` replaces a memory by ID without an ownership check.
+Document ingestion, namespace routing, and automatic-routing tools are likewise unrestricted.
+Summary View tools and the ingestion hook status tools are store-wide, so a `sessionId`-only toolset refuses them.
+This matches the existing long-term memory tools, which check ownership only under a `userId` or `namespaceId`.
+Set `userId` or `namespaceId` whenever `sessionId` must act as a write boundary.
+
+With a fixed session, `list_sessions` returns only that session, or nothing when a `namespaceId` filter names a different namespace than the session's.
+Without a fixed session, `list_sessions` needs an `ownerId`, a `namespaceId`, or explicit `includeAll: true`.
+A fixed `userId` supplies the owner, and a fixed `namespaceId` supplies the namespace.
+A `namespaceId` argument that differs from a fixed namespace is rejected.
+`includeAll` is rejected alongside an owner or a namespace, because the service does not allow it alongside a filter.
+With a namespace scope, `list_sessions` rejects any returned session outside that namespace.
 
 Resolved scopes provide application guardrails and use preflight reads.
 Factory scope is only a replaceable default, not an authorization ceiling.
@@ -331,11 +418,13 @@ Set `namespaceTools: true` on `createRedisAgentMemory(...)` to add:
 
 | Tool | Parameters |
 | --- | --- |
-| `list_namespaces` | `{parentId?, scope?, ownerId?, limit?, cursor?}` |
+| `list_namespaces` | `{parentId?, scope?, ownerId?, limit?, cursor?, sortBy?, sortOrder?}` |
 | `get_namespace` | `{namespaceId}` |
 | `create_namespace` | `{name?, path?, scope?, parentId?, ownerId?}` |
 | `update_namespace` | `{namespaceId, name?, state?: 'ARCHIVED'}` |
-| `move_memories` | `{memoryIds, namespaceId}` |
+| `move_memories` | `{memoryIds, namespaceId?}` |
+| `get_namespace_routing` | `{}` |
+| `put_namespace_routing` | `{policy}`; only with `routingPolicyWrites: true` |
 | `delete_namespace` | `{namespaceId}`; omitted when deletes are disabled |
 
 Create roots with name/scope, children with name/parentId, or a hierarchy with path/scope.
@@ -345,13 +434,153 @@ A fixed namespace scope prevents creation or moving memories outside that namesp
 Legacy namespace scopes cannot enable resource administration tools.
 Archive and delete operations follow the server's rules; deletion is for empty leaf namespaces.
 
+`list_namespaces` sorts by `id`, `name`, `createdAt`, or `updatedAt`, and defaults to `id`.
+`sortOrder` is `ASC` or `DESC`, and defaults to `ASC`.
+`limit` accepts 1 to 1000.
+
+`move_memories` with a `namespaceId` moves the memories to that active namespace.
+Without a `namespaceId`, it asks the store to route the memories by its routing policy.
+Per the tool description, automatic routing applies only to memories already in a shared namespace; personal and unnamespaced memories keep their placement and get a per-item error.
+A toolset with a fixed `userId` or `namespaceId` refuses automatic routing, because routing can move memories outside the scope.
+
+`get_namespace_routing` reads the store-wide routing policy.
+`put_namespace_routing` replaces the whole policy, so read it first and send every rule to keep.
+A toolset with a fixed `userId` or `namespaceId` refuses both tools.
+A policy has this shape:
+
+```ts
+{
+  enabled: true,
+  rules: [{
+    id: 'support-tickets',               // 1 to 64 characters
+    destinationNamespaceId: 'shared-ns', // a SHARED namespace
+    enabled: true,
+    action: 'ACCEPT',                    // or 'REJECT'
+    strategies: [
+      { kind: 'LLM_PROMPT', llmPrompt: { prompt: 'Support ticket details' } },
+      { kind: 'MATCHER_SPEC', matcher: { kind: 'REGEX', regex: { pattern: '^TICKET-' } } },
+    ],
+  }],
+}
+```
+
+Each strategy carries exactly the block that matches its `kind`.
+Regex patterns use RE2 syntax, without lookaround or backreferences.
+
+## Optional ingestion tools
+
+Set `ingestionTools: true` on `createRedisAgentMemory(...)` to add:
+
+| Tool | Parameters |
+| --- | --- |
+| `create_document_ingestion` | `{documentId, revision, content, mediaType, extractorId, ownerId?, idempotencyKey}` |
+| `get_document_ingestion` | `{ingestionId}` |
+| `list_document_ingestion_outputs` | `{ingestionId, limit?, cursor?}` |
+| `get_ingestion_hook_status` | `{eventId}` |
+| `list_ingestion_hook_statuses` | `{limit?, cursor?}` |
+
+`create_document_ingestion` submits one revision of a document for asynchronous extraction into long-term memories.
+`content` is plain UTF-8 text, and the tool base64-encodes it.
+`mediaType` is `text/plain` or `text/markdown`.
+`extractorId` is `ex_` followed by 32 hex characters, and must name an extractor configured for documents.
+`idempotencyKey` is required.
+`ownerId` is required unless the scope fixes `userId`.
+A toolset with a fixed `namespaceId` refuses this tool, because the extracted memories cannot be placed in that namespace.
+
+Poll `get_document_ingestion` until the processing state is terminal.
+The states are `QUEUED`, `RUNNING`, `SUCCEEDED`, `FAILED`, and `PARTIAL`.
+Then page the created memory IDs with `list_document_ingestion_outputs`.
+A page can be empty while `nextCursor` is present.
+`ingestionId` is `ing_` followed by 32 hex characters.
+
+The 1.0.0 ingestion record has no `ownerId`.
+A toolset with a fixed `userId` or `namespaceId` reads an ingestion it submitted itself with `create_document_ingestion`, even before it has produced memories.
+That record lives in the toolset instance, so a new instance, or an ingestion submitted elsewhere, falls back to proving scope through the memories the ingestion produced.
+Both tools then return nothing until at least one output memory passes the scope check.
+They follow `nextCursor` for up to 5 pages of 100 outputs to find one.
+They refuse the read with `INVALID_SCOPE` when none does, and when any returned memory is outside the scope.
+Output IDs whose memory no longer exists are skipped.
+
+A scoped toolset therefore cannot poll such an ingestion until it has produced memories.
+Keep one toolset instance for the whole submit-and-poll flow, or use an unscoped toolset to watch it.
+
+`get_ingestion_hook_status` reads one ingestion hook decision by the event ID of the write it judged.
+`list_ingestion_hook_statuses` lists recent decisions, newest first.
+Per the tool descriptions, statuses are kept for seven days.
+Use them after a write fails with HTTP 422 (stopped hook) or HTTP 503 (retryable hook).
+With a fixed `userId`, `get_ingestion_hook_status` refuses another owner's status, and `list_ingestion_hook_statuses` omits them, so a page can hold fewer items than `limit`.
+Hook statuses are store-wide.
+A toolset with a fixed `namespaceId` refuses both tools, because statuses carry no namespace.
+
+## Optional Summary View tools
+
+Set `summaryViewTools: true` on `createRedisAgentMemory(...)` to add:
+
+| Tool | Parameters |
+| --- | --- |
+| `list_summary_views` | `{limit?, cursor?}` |
+| `get_summary_view` | `{viewId}` |
+| `create_summary_view` | `{name, description?, visibility?, filter?, groupBy, evictionPolicy?, timeWindowSeconds?, output, refreshPolicy}` |
+| `update_summary_view` | `{viewId, name?, description?, filter?, clearFilter?, groupBy?, evictionPolicy?, timeWindowSeconds?, clearTimeWindow?, output?, refreshPolicy?, state?}` |
+| `refresh_summary_view` | `{viewId, target, partition?}` |
+| `get_summary_view_result` | `{viewId, partition?, includeSourceMemoryIds?}` |
+| `delete_summary_view` | `{viewId}`; omitted when deletes are disabled |
+
+A Summary View keeps a generated summary of the long-term memories its `filter` selects.
+`filter` uses the `search_memories` filter shape.
+`groupBy` lists up to four of `ownerId`, `sessionId`, `namespaceId`, and `memoryType`, and splits the view into one partition per distinct value.
+An empty `groupBy` keeps a single summary.
+`output.format` is `TEXT` or `STRUCTURED`; `STRUCTURED` requires `output.schema`, a flat list of fields.
+`refreshPolicy.mode` is `MANUAL` or `CONTINUOUS`; `CONTINUOUS` requires `reconcileIntervalSeconds`.
+`visibility` is `PRIVATE` (the default) or `SHARED`, and cannot change after creation.
+Per the tool description, `PRIVATE` keeps the view to the API caller, not to an application user.
+
+`refresh_summary_view` queues an asynchronous refresh.
+`target: 'PARTITION'` refreshes one exact partition, and `target: 'FULL'` reconciles every partition and takes no partition.
+`get_summary_view_result` reads one partition.
+Check its `status` before using `value`.
+`partition` holds one value for each `groupBy` field of the view.
+
+### Summary Views under a fixed scope
+
+These rules apply when the scope fixes `userId`, `namespaceId`, or both.
+A fixed `sessionId` alone sets no boundary, so a toolset scoped only by `sessionId` refuses every Summary View tool.
+A toolset without a fixed user or namespace has full access to every view.
+
+A view's `ownerId` is the API caller, so the tools prove access from the view's `filter` and `groupBy`.
+A fixed field is pinned when the view's filter contains exactly `{eq: <fixed value>}` for it, and the filter is conjunctive.
+A filter is conjunctive when `op` is `ALL`, or when `op` is omitted and the field is the filter's only condition.
+`userId` maps to the `ownerId` field, and `namespaceId` maps to the `namespaceId` field.
+
+Each view gets one of four access levels:
+
+| Level | Condition | Allowed tools |
+| --- | --- | --- |
+| Hidden | A fixed field is neither pinned nor in `groupBy`, or the filter names other values for it (`eq` differs, or `in` omits the fixed value) | None; `list_summary_views` omits it, and the other tools refuse it |
+| Read-only | The view is `SHARED`, and every fixed field that is not pinned is in `groupBy` | `get_summary_view` and `get_summary_view_result` |
+| Read | The view is `PRIVATE`, and every fixed field that is not pinned is in `groupBy` | The read-only tools, plus `refresh_summary_view` with `target: 'PARTITION'` |
+| Manage | The view is `PRIVATE`, and every fixed field is pinned | All read tools, plus `update_summary_view`, `refresh_summary_view` with `target: 'FULL'`, and `delete_summary_view` |
+
+A page of `list_summary_views` can hold fewer items than `limit`, because hidden views are omitted.
+
+For partition reads and refreshes, the tools fill in each fixed value whose field is in the view's `groupBy`.
+A partition value that conflicts with a fixed value is refused.
+
+`create_summary_view` always creates a `PRIVATE` view and refuses `visibility: 'SHARED'`.
+It pins the filter to the fixed user and namespace and sets `op: 'ALL'`, so the new view is at the manage level.
+It refuses a filter with `op: 'ANY'` or a filter that names a different owner or namespace.
+`update_summary_view` requires the manage level, pins a new filter the same way, and refuses `clearFilter`.
+
 ## Failures and cancellation
 
 Tool execution throws `RedisAgentMemoryToolError` with a safe `code`, message, and optional HTTP `statusCode`.
 Upstream headers, bodies, and API keys are not passed into model context.
 Cancellation is surfaced as `AbortError`.
 Bulk results retain partial errors so the agent can identify individual failures.
-An uncertain memory creation or session append can already have committed: reconcile its outcome before retrying.
+An uncertain memory creation or session append can already have committed.
+Retry a memory write with the same `idempotencyKey` and identical input, or reconcile its outcome before retrying without a key.
+The store may not deduplicate session appends by key, so read the session with `get_session_memory` before retrying an uncertain `add_session_event`.
+Scope refusals use the code `INVALID_SCOPE`.
 
 Automatic summary/promotion behavior belongs to the Redis Agent Memory store configuration.
 Deleting session history does not cascade to promoted long-term memories.
