@@ -9,9 +9,10 @@ const ingestionId = z.string().regex(/^ing_[0-9a-f]{32}$/).describe('Ingestion I
 const extractorId = z.string().regex(/^ex_[0-9a-f]{32}$/).describe('Document extractor ID configured for this store.');
 
 const MAX_PROOF_PAGES = 5;
+const PROOF_BATCH = 5;
 const SCOPED_READ_RULE =
-  'A toolset with a fixed user or namespace can read an ingestion only once it has produced memories in that scope; until then the read is refused.';
-const HOOK_SCOPE_RULE = 'Unavailable when the toolset has a fixed namespace.';
+  'A toolset with a fixed user or namespace can read an ingestion it submitted itself, or one that has produced memories in that scope; any other read is refused.';
+const HOOK_SCOPE_RULE = 'Unavailable when the toolset has a fixed namespace, or a sessionId without a fixed user.';
 
 function fail(message: string): never {
   throw new RedisAgentMemoryToolError('INVALID_SCOPE', message);
@@ -28,6 +29,9 @@ function toBase64(text: string): string {
 /** Optional document ingestion and ingestion hook tools. Access checks never trust model-supplied IDs. */
 export function createIngestionTools(client: AgentMemory, ctx: ScopedMemory): ToolSet {
   const { scope, hasResourceScope } = ctx;
+  // An ingestion that produced no memories (still running, failed, or fully filtered) cannot prove scope through
+  // its outputs, so a scoped toolset also trusts the ingestions it submitted itself with its own forced owner.
+  const submitted = new Set<string>();
 
   // A document ingestion record carries no owner, so scope is proven through the memories it produced.
   const verifyOutputs = async (ids: string[], signal?: AbortSignal) => {
@@ -48,7 +52,10 @@ export function createIngestionTools(client: AgentMemory, ctx: ScopedMemory): To
     let cursor: string | undefined;
     for (let page = 0; page < MAX_PROOF_PAGES; page++) {
       const outputs = await client.listDocumentIngestionOutputs(id, 100, cursor, { signal });
-      if ((await verifyOutputs(outputs.items, signal)).length > 0) return;
+      // One ingestion has one owner, so a handful of checks per page is proof enough; stop at the first that passes.
+      for (let i = 0; i < outputs.items.length; i += PROOF_BATCH) {
+        if ((await verifyOutputs(outputs.items.slice(i, i + PROOF_BATCH), signal)).length > 0) return;
+      }
       cursor = outputs.nextCursor;
       if (cursor === undefined) break;
     }
@@ -56,6 +63,9 @@ export function createIngestionTools(client: AgentMemory, ctx: ScopedMemory): To
   };
 
   const assertHookScope = () => {
+    if (scope.sessionId !== undefined && !hasResourceScope) {
+      fail('Ingestion hook statuses are store-wide, so they are unavailable when the toolset is scoped only by sessionId.');
+    }
     if (scope.namespaceId !== undefined) {
       fail('Ingestion hook statuses carry no namespace, so they are unavailable when the toolset has a fixed namespace.');
     }
@@ -83,6 +93,7 @@ export function createIngestionTools(client: AgentMemory, ctx: ScopedMemory): To
           { ...input, content: toBase64(content), ownerId: ctx.resolveOwner(ownerId) },
           { signal: abortSignal },
         );
+        submitted.add(result.result.ingestionId);
         return result.result;
       },
     }),
@@ -95,7 +106,7 @@ export function createIngestionTools(client: AgentMemory, ctx: ScopedMemory): To
       inputSchema: z.object({ ingestionId }),
       execute: async ({ ingestionId: id }, { abortSignal }) => {
         const result = await client.getDocumentIngestion(id, { signal: abortSignal });
-        if (hasResourceScope) await assertIngestionInScope(id, abortSignal);
+        if (hasResourceScope && !submitted.has(id)) await assertIngestionInScope(id, abortSignal);
         return result;
       },
     }),
@@ -109,7 +120,7 @@ export function createIngestionTools(client: AgentMemory, ctx: ScopedMemory): To
       execute: async ({ ingestionId: id, limit, cursor }, { abortSignal }) => {
         const result = await client.listDocumentIngestionOutputs(id, limit, cursor, { signal: abortSignal });
         const items = await verifyOutputs(result.items, abortSignal);
-        if (hasResourceScope && items.length === 0) await assertIngestionInScope(id, abortSignal);
+        if (hasResourceScope && items.length === 0 && !submitted.has(id)) await assertIngestionInScope(id, abortSignal);
         return { ...result, items };
       },
     }),

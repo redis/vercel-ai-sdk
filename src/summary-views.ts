@@ -275,5 +275,12 @@ export function createSummaryViewTools(
     });
   }
 
+  // Summary Views are store-wide and a session binds no user or namespace, so a sessionId-only toolset has no boundary to stay inside.
+  if (ctx.scope.sessionId !== undefined && !ctx.hasResourceScope) {
+    for (const entry of Object.values(tools)) {
+      entry.execute = async () => fail('Summary View tools are unavailable when the toolset is scoped only by sessionId; fix a userId or namespaceId.');
+    }
+  }
+
   return tools;
 }

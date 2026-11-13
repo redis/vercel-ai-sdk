@@ -9,6 +9,8 @@ export interface NamespaceToolOptions {
   ownerId?: string;
   namespaceId?: string;
   allowDeletes: boolean;
+  /** Expose put_namespace_routing, which replaces the store-wide routing policy. */
+  allowRoutingWrites?: boolean;
   assertMemory: (id: string, signal?: AbortSignal) => Promise<unknown>;
 }
 
@@ -248,8 +250,10 @@ export function createNamespaceTools(
         return client.getNamespaceRouting({}, requestOptions(abortSignal));
       },
     }),
+  };
 
-    put_namespace_routing: tool({
+  if (options.allowRoutingWrites) {
+    tools.put_namespace_routing = tool({
       description:
         "Replace the whole store-wide namespace routing policy. Read it with get_namespace_routing first and send " +
         "every rule to keep. Rules only target shared namespaces. ACCEPT selects a destination; REJECT blocks one, " +
@@ -259,8 +263,8 @@ export function createNamespaceTools(
         assertStoreWide("Namespace routing is a store-wide policy.");
         return client.putNamespaceRouting({ policy }, requestOptions(abortSignal));
       },
-    }),
-  };
+    });
+  }
 
   if (options.allowDeletes) {
     tools.delete_namespace = tool({

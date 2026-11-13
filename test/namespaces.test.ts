@@ -37,7 +37,7 @@ function setup(options: Partial<NamespaceToolOptions> = {}, records: Namespace[]
   };
   const assertMemory = vi.fn(async (_id: string, _signal?: AbortSignal) => undefined);
   const tools = createNamespaceTools(client as unknown as AgentMemory, {
-    allowDeletes: true, assertMemory, ...options,
+    allowDeletes: true, allowRoutingWrites: true, assertMemory, ...options,
   });
   return { tools, client, assertMemory };
 }
@@ -230,6 +230,12 @@ describe('namespace scope enforcement', () => {
       expect(client.putNamespaceRouting).not.toHaveBeenCalled();
     },
   );
+
+  it('omits put_namespace_routing unless routing writes are enabled', () => {
+    const { tools } = setup({ allowRoutingWrites: false });
+    expect(tools.get_namespace_routing).toBeDefined();
+    expect(tools.put_namespace_routing).toBeUndefined();
+  });
 
   it('reads and replaces the store-wide routing policy', async () => {
     const { tools, client } = setup();

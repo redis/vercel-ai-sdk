@@ -134,6 +134,33 @@ describe('document ingestion reads', () => {
     },
   );
 
+  it('lets a scoped toolset read an ingestion it submitted before any output exists', async () => {
+    const { tools, client } = setup({ userId: 'user-1' }, {}, []);
+    await expect(run(tools, 'get_document_ingestion', { ingestionId: ING })).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
+    await run(tools, 'create_document_ingestion', submission);
+    client.listDocumentIngestionOutputs.mockClear();
+    expect(await run(tools, 'get_document_ingestion', { ingestionId: ING }))
+      .toEqual({ ingestion: expect.objectContaining({ ingestionId: ING }) });
+    expect(await run(tools, 'list_document_ingestion_outputs', { ingestionId: ING })).toMatchObject({ items: [] });
+    expect(client.listDocumentIngestionOutputs).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops the scope proof at the first verified output instead of checking the whole page', async () => {
+    const ids = Array.from({ length: 100 }, (_, i) => `m${i}`);
+    const { tools, client } = setup({ userId: 'user-1' }, Object.fromEntries(ids.map(id => [id, { ownerId: 'user-1' }])), ids);
+    await run(tools, 'get_document_ingestion', { ingestionId: ING });
+    expect(client.getLongTermMemory.mock.calls.length).toBeLessThanOrEqual(5);
+  });
+
+  it.each(['get_ingestion_hook_status', 'list_ingestion_hook_statuses'])(
+    'refuses %s when scoped only by sessionId, since statuses are store-wide', async (name) => {
+      const { tools, client } = setup({ sessionId: 'session-1' });
+      await expect(run(tools, name, { eventId: 'evt-1' })).rejects.toMatchObject({ code: 'INVALID_SCOPE' });
+      expect(client.getIngestionHookStatus).not.toHaveBeenCalled();
+      expect(client.listIngestionHookStatuses).not.toHaveBeenCalled();
+    },
+  );
+
   it('refuses a scoped status read when every output was deleted', async () => {
     const { tools } = setup({ namespaceId: 'ns-1' }, {}, ['m-deleted']);
     await expect(run(tools, 'get_document_ingestion', { ingestionId: ING })).rejects.toMatchObject({ code: 'INVALID_SCOPE' });

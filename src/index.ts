@@ -41,6 +41,8 @@ interface RedisAgentMemoryToolOptions {
   allowDeletes?: boolean;
   /** Expose namespace administration and store-wide routing tools. Defaults to false. */
   namespaceTools?: boolean;
+  /** With namespaceTools, also expose put_namespace_routing, which replaces the store-wide routing policy. Defaults to false. */
+  routingPolicyWrites?: boolean;
   /** Expose document ingestion and ingestion hook status tools. Defaults to false. */
   ingestionTools?: boolean;
   /** Expose Summary View tools. Defaults to false. */
@@ -262,7 +264,9 @@ function buildTools(
       execute: async ({ memoryId, ...input }, { abortSignal }) => {
         if (input.text === undefined && input.attributes === undefined) fail('Supply text or attributes.');
         if (hasResourceScope) await assertMemory(memoryId, abortSignal);
-        await client.updateLongTermMemoryFields(memoryId, place(input), { signal: abortSignal });
+        const placed = place(input);
+        await assertPlacementOwner(placed, abortSignal);
+        await client.updateLongTermMemoryFields(memoryId, placed, { signal: abortSignal });
         return { updated: true, memoryId };
       },
     }),
@@ -323,7 +327,8 @@ function buildTools(
     }),
   });
   if (options.namespaceTools) Object.assign(tools, createNamespaceTools(client, {
-    ownerId: scope.userId, namespaceId: scope.namespaceId, allowDeletes: deletes, assertMemory,
+    ownerId: scope.userId, namespaceId: scope.namespaceId, allowDeletes: deletes,
+    allowRoutingWrites: options.routingPolicyWrites === true, assertMemory,
   }));
   if (options.ingestionTools) Object.assign(tools, createIngestionTools(client, scoped));
   if (options.summaryViewTools) Object.assign(tools, createSummaryViewTools(client, scoped, { allowDeletes: deletes }));
@@ -377,6 +382,7 @@ export function createRedisAgentMemory<DefaultModel extends ConfiguredLanguageMo
   const toolOptions: Readonly<RedisAgentMemoryToolOptions> = Object.freeze({
     allowDeletes: options.allowDeletes,
     namespaceTools: options.namespaceTools,
+    routingPolicyWrites: options.routingPolicyWrites,
     ingestionTools: options.ingestionTools,
     summaryViewTools: options.summaryViewTools,
     timeoutMs: options.timeoutMs,

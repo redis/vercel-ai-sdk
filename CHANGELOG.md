@@ -5,13 +5,16 @@
 * Adds `upsert_memory`, `update_memory_fields`, `list_memory_sources`, `list_memory_source_evidence`, and `list_source_memories` to every toolset.
 * Adds the opt-in `ingestionTools` option for `create_document_ingestion`, `get_document_ingestion`, `list_document_ingestion_outputs`, `get_ingestion_hook_status`, and `list_ingestion_hook_statuses`. Defaults to `false`.
 * Adds the opt-in `summaryViewTools` option for the Summary View tools. Defaults to `false`. `delete_summary_view` also requires `allowDeletes`.
-* Adds `get_namespace_routing` and `put_namespace_routing` to `namespaceTools`.
+* Adds `get_namespace_routing` to `namespaceTools`, and `put_namespace_routing` behind the separate opt-in `routingPolicyWrites` option, since it replaces the store-wide policy.
 * `move_memories` routes memories by the store's routing policy when `namespaceId` is omitted.
 * `search_memories`, `list_sessions`, and `list_namespaces` accept `sortBy` and `sortOrder`. `search_memories` sorts only without `query`.
 * `search_memories` accepts `excludeDocumentManaged`. `list_sessions` accepts a `namespaceId` filter.
 * `start_session`, `add_session_event`, `create_memories`, `update_memory`, `upsert_memory`, and `update_memory_fields` accept `idempotencyKey`. `start_session` also accepts `createdAt`.
 * `create_memories` with `idempotencyKey` derives deterministic memory IDs, so an identical retry replays the saved result.
 * `update_memory`, `upsert_memory`, and `update_memory_fields` accept `expectedRevision`.
+* A toolset scoped only by `sessionId` refuses every Summary View tool and the ingestion hook status tools, since they are store-wide and the session binds no user or namespace.
+* A scoped toolset can read document ingestions it submitted itself before they produce memories.
+* `update_memory_fields` checks that a fixed user owns the target namespace, as `update_memory` does.
 * Under a fixed `userId` or `namespaceId`, routing tools and automatic routing are refused. Summary Views are hidden, readable, or manageable by how their filter pins the scope. A `SHARED` view is readable, with the partition forced to the scope, but cannot be updated, refreshed, or deleted. `create_summary_view` creates only `PRIVATE` views.
 * `create_document_ingestion` is refused under a fixed `namespaceId`.
 * The 1.0.0 ingestion record has no `ownerId`, so a toolset with a fixed `userId` or `namespaceId` reads an ingestion only after it has produced a memory in scope.

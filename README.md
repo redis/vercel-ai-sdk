@@ -130,6 +130,7 @@ const memory = createRedisAgentMemory({
   model,
   allowDeletes,
   namespaceTools,
+  routingPolicyWrites,
   ingestionTools,
   summaryViewTools,
   timeoutMs,
@@ -145,6 +146,7 @@ const memory = createRedisAgentMemory({
 | `model` | Optional configured AI SDK model default; never a model-name string |
 | `allowDeletes` | `false`; exposes deletion tools when true |
 | `namespaceTools` | `false`; exposes namespace administration and store-wide routing tools when true |
+| `routingPolicyWrites` | `false`; with `namespaceTools`, also exposes `put_namespace_routing`, which replaces the store-wide routing policy |
 | `ingestionTools` | `false`; exposes document ingestion and ingestion hook status tools when true |
 | `summaryViewTools` | `false`; exposes Summary View tools when true |
 | `timeoutMs` | `30000` per HTTP request; must be positive and finite |

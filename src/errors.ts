@@ -5,12 +5,12 @@ export class RedisAgentMemoryToolError extends Error {
   }
 }
 
-/** Share safe SDK error handling between model tools and application hooks. */
 const statusGuidance: Record<number, string> = {
-  409: 'The resource already exists, or the idempotencyKey was already used for a different request. Use a new key for a different request.',
+  409: 'The target already exists, or the idempotencyKey was already used for a different request. If you sent a key, use a new one for a different request; otherwise do not repeat the create.',
   412: 'The memory changed after expectedRevision was read, so nothing was written. Call get_memory for the current revision, reapply the change to it, and send that revision as expectedRevision.',
 };
 
+/** Share safe SDK error handling between model tools and application hooks. */
 export function sanitizeMemoryError(error: unknown): RedisAgentMemoryToolError {
   if (error instanceof RedisAgentMemoryToolError) return error;
   const code = typeof error === 'object' && error !== null && 'statusCode' in error && typeof error.statusCode === 'number'

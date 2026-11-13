@@ -396,7 +396,8 @@ User-scoped resource placements require a PERSONAL namespace owned by that user.
 
 A scope with only `sessionId` fixes the session for session tools but sets no owner or namespace boundary.
 Without a fixed `userId` or `namespaceId`, `upsert_memory` replaces a memory by ID without an ownership check.
-Summary View, document ingestion, namespace routing, and automatic-routing tools are likewise unrestricted.
+Document ingestion, namespace routing, and automatic-routing tools are likewise unrestricted.
+Summary View tools and the ingestion hook status tools are store-wide, so a `sessionId`-only toolset refuses them.
 This matches the existing long-term memory tools, which check ownership only under a `userId` or `namespaceId`.
 Set `userId` or `namespaceId` whenever `sessionId` must act as a write boundary.
 
@@ -423,7 +424,7 @@ Set `namespaceTools: true` on `createRedisAgentMemory(...)` to add:
 | `update_namespace` | `{namespaceId, name?, state?: 'ARCHIVED'}` |
 | `move_memories` | `{memoryIds, namespaceId?}` |
 | `get_namespace_routing` | `{}` |
-| `put_namespace_routing` | `{policy}` |
+| `put_namespace_routing` | `{policy}`; only with `routingPolicyWrites: true` |
 | `delete_namespace` | `{namespaceId}`; omitted when deletes are disabled |
 
 Create roots with name/scope, children with name/parentId, or a hierarchy with path/scope.
@@ -493,14 +494,15 @@ A page can be empty while `nextCursor` is present.
 `ingestionId` is `ing_` followed by 32 hex characters.
 
 The 1.0.0 ingestion record has no `ownerId`.
-A toolset with a fixed `userId` or `namespaceId` proves scope through the memories the ingestion produced.
-Both tools return nothing until at least one output memory passes the scope check.
+A toolset with a fixed `userId` or `namespaceId` reads an ingestion it submitted itself with `create_document_ingestion`, even before it has produced memories.
+That record lives in the toolset instance, so a new instance, or an ingestion submitted elsewhere, falls back to proving scope through the memories the ingestion produced.
+Both tools then return nothing until at least one output memory passes the scope check.
 They follow `nextCursor` for up to 5 pages of 100 outputs to find one.
 They refuse the read with `INVALID_SCOPE` when none does, and when any returned memory is outside the scope.
 Output IDs whose memory no longer exists are skipped.
 
-A scoped toolset therefore cannot poll an ingestion that has produced no memories yet.
-Use an unscoped toolset to watch a queued or running ingestion, or wait for the first outputs.
+A scoped toolset therefore cannot poll such an ingestion until it has produced memories.
+Keep one toolset instance for the whole submit-and-poll flow, or use an unscoped toolset to watch it.
 
 `get_ingestion_hook_status` reads one ingestion hook decision by the event ID of the write it judged.
 `list_ingestion_hook_statuses` lists recent decisions, newest first.
@@ -542,7 +544,7 @@ Check its `status` before using `value`.
 ### Summary Views under a fixed scope
 
 These rules apply when the scope fixes `userId`, `namespaceId`, or both.
-A fixed `sessionId` alone does not restrict Summary Views.
+A fixed `sessionId` alone sets no boundary, so a toolset scoped only by `sessionId` refuses every Summary View tool.
 A toolset without a fixed user or namespace has full access to every view.
 
 A view's `ownerId` is the API caller, so the tools prove access from the view's `filter` and `groupBy`.

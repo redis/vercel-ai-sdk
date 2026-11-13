@@ -164,6 +164,18 @@ describe('summary view visibility under a fixed scope', () => {
   });
 });
 
+describe('a toolset scoped only by sessionId', () => {
+  it('refuses every Summary View tool, since a session binds no user or namespace', async () => {
+    const { tools, client } = setup({ sessionId: 'session-1' }, [pinnedToUser], true);
+    for (const [name, input] of [
+      ['list_summary_views', {}], ['get_summary_view', { viewId: 'pinned' }], ['create_summary_view', createInput],
+      ['update_summary_view', { viewId: 'pinned', name: 'x' }], ['refresh_summary_view', { viewId: 'pinned', target: 'FULL' }],
+      ['get_summary_view_result', { viewId: 'pinned' }], ['delete_summary_view', { viewId: 'pinned' }],
+    ] as const) await expect(run(tools, name, input)).rejects.toMatchObject(scopeRefusal);
+    for (const fn of Object.values(client)) expect(fn).not.toHaveBeenCalled();
+  });
+});
+
 describe('get_summary_view_result', () => {
   it('fills the fixed owner into a grouped partition', async () => {
     const { tools, client } = setup({ userId: 'user-1' }, [groupedByOwner]);

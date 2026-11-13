@@ -109,7 +109,9 @@ describe('RedisAgentMemory toolset', () => {
     { options: { allowDeletes: true }, deletes: true, namespaces: false },
     { options: { namespaceTools: true }, deletes: false, namespaces: true },
     { options: { allowDeletes: true, namespaceTools: true }, deletes: true, namespaces: true },
-  ])('exposes only the tools enabled by $options', async ({ options, deletes, namespaces }) => {
+    { options: { namespaceTools: true, routingPolicyWrites: true }, deletes: false, namespaces: true, routingWrites: true },
+    { options: { routingPolicyWrites: true }, deletes: false, namespaces: false, routingWrites: false },
+  ])('exposes only the tools enabled by $options', async ({ options, deletes, namespaces, routingWrites = false }) => {
     const tools = makeTools(serverURL, 'store-1', apiKey, undefined, options);
     expect(tools.search_memories).toBeDefined();
     for (const name of ['delete_memories', 'delete_session_event', 'delete_session_memory']) {
@@ -117,10 +119,11 @@ describe('RedisAgentMemory toolset', () => {
     }
     for (const name of [
       'list_namespaces', 'get_namespace', 'create_namespace', 'update_namespace', 'move_memories',
-      'get_namespace_routing', 'put_namespace_routing',
+      'get_namespace_routing',
     ]) {
       expect(tools[name] !== undefined).toBe(namespaces);
     }
+    expect(tools.put_namespace_routing !== undefined).toBe(routingWrites);
     expect(tools.delete_namespace !== undefined).toBe(deletes && namespaces);
     expect(await run(tools, 'get_memory_context', {})).toHaveProperty('allowDeletes', deletes);
   });
