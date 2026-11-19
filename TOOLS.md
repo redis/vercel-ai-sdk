@@ -329,7 +329,7 @@ Pass the memory's current `namespaceId`; omitting it asserts that the memory has
 `update_memory`, `upsert_memory`, and `update_memory_fields` accept `expectedRevision`.
 Read the current `revision` from `get_memory`.
 A stale revision fails with HTTP 412, and the error tells the agent that nothing was written and to call `get_memory` for the current revision before retrying.
-HTTP 409 errors say that the resource exists or that the `idempotencyKey` was used for a different request.
+HTTP 409 errors say that the request conflicts with the current state, which covers an existing target, a concurrent change, an archived namespace or one with children, and an `idempotencyKey` used for a different request. They tell the agent to read the current state before retrying.
 
 ### Memory provenance
 

@@ -112,6 +112,16 @@ describe('failure guidance', () => {
     });
   });
 
+  it('gives conflict guidance that is not specific to creating', async () => {
+    transport({ status: 409, body: {} });
+    await expect(run(tools(), 'update_memory', {
+      memoryId: 'memory-1', changes: { text: 'x' },
+    })).rejects.toMatchObject({
+      code: 'IRIS_HTTP_409',
+      message: expect.stringMatching(/current state.*Read the current state before retrying/s),
+    });
+  });
+
   it('does not suggest a rejected write may have partially succeeded', async () => {
     transport({ status: 412, body: {} });
     await expect(run(tools(), 'update_memory', {

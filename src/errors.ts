@@ -6,7 +6,7 @@ export class RedisAgentMemoryToolError extends Error {
 }
 
 const statusGuidance: Record<number, string> = {
-  409: 'The target already exists, or the idempotencyKey was already used for a different request. If you sent a key, use a new one for a different request; otherwise do not repeat the create.',
+  409: 'The request conflicts with the current state: the target already exists, changed concurrently, is archived or still has children, or the idempotencyKey was already used for a different request. Read the current state before retrying. Reuse an idempotencyKey only for the identical request.',
   412: 'The memory changed after expectedRevision was read, so nothing was written. Call get_memory for the current revision, reapply the change to it, and send that revision as expectedRevision.',
 };
 
