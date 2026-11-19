@@ -145,6 +145,19 @@ describe('idempotency', () => {
     expect(result.errors).toEqual([expect.objectContaining({ memoryId: sent[1], status: 409 })]);
   });
 
+  it('derives different IDs for different keys, owners, and positions', async () => {
+    const requests = transport(created, created, created);
+    const ids = async (userId: string, idempotencyKey: string) => {
+      await run(tools({ userId }), 'create_memories', { idempotencyKey, memories: [{ text: 'A.' }, { text: 'B.' }] });
+      return requests.at(-1)!.body.memories.map((record: { memoryId: string }) => record.memoryId) as string[];
+    };
+    const base = await ids('user-1', 'retry-1');
+    const otherKey = await ids('user-1', 'retry-2');
+    const otherOwner = await ids('user-2', 'retry-1');
+    expect(base[0]).not.toBe(base[1]);
+    expect(new Set([...base, ...otherKey, ...otherOwner]).size).toBe(6);
+  });
+
   it('generates fresh IDs for unkeyed batches', async () => {
     transport(created, created);
     const input = { memories: [{ text: 'Likes tea.', ownerId: 'user-1' }] };
