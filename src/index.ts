@@ -177,7 +177,7 @@ function buildTools(
       },
     }),
     create_memories: tool({
-      description: 'Create up to 100 durable memories in one batch. IDs are generated automatically; do not supply them. Use the user ID as ownerId; fixed scope.userId supplies it automatically. created and errors report per-record outcomes. Without idempotencyKey each call generates new IDs and memoryIds lists them all in input order, so reconcile uncertain writes before retrying. With idempotencyKey, a retry of the identical request replays the saved result with the same IDs, and memoryIds lists only the records the service created, in input order; a rejected record appears in errors instead.',
+      description: 'Create up to 100 durable memories in one batch. IDs are generated automatically; do not supply them. Use the user ID as ownerId; fixed scope.userId supplies it automatically. created and errors report per-record outcomes. Without idempotencyKey each call generates new IDs and memoryIds lists them all in input order, so reconcile uncertain writes before retrying. With idempotencyKey, a retry of the identical request replays the saved result with the same IDs, and memoryIds stays aligned with the input, holding null for a record the service rejected; that record also appears in errors.',
       inputSchema: z.object({ memories: z.array(s.memory).min(1).max(100), idempotencyKey: s.idempotencyKey.optional() }),
       execute: async ({ memories, idempotencyKey }, { abortSignal }) => {
         const records = await Promise.all(memories.map(async (memory, index) => {
@@ -199,9 +199,10 @@ function buildTools(
         const result = await client.bulkCreateLongTermMemories({ memories: records, idempotencyKey }, { signal: abortSignal });
         const all = records.map(record => record.memoryId);
         if (idempotencyKey === undefined) return { ...result, memoryIds: all };
-        // Keyed IDs are guessable, so another owner may already hold one; report only what the service created.
+        // Keyed IDs are guessable, so another owner may already hold one; never hand back an ID the service did not create.
+        // Nulls keep each position tied to its input record, since an error names only the rejected ID.
         const created = new Set(result.created);
-        return { ...result, memoryIds: all.filter(id => created.has(id)) };
+        return { ...result, memoryIds: all.map(id => created.has(id) ? id : null) };
       },
     }),
     get_memory: tool({

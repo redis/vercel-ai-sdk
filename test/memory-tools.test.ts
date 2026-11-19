@@ -131,7 +131,7 @@ describe('idempotency', () => {
     expect(requests[0]!.body).toMatchObject({ idempotencyKey: 'retry-1', memories: [{ memoryId: first.memoryIds[0] }] });
   });
 
-  it('reports only created IDs for a keyed batch when the service rejects a pre-claimed ID', async () => {
+  it('keeps keyed memoryIds aligned with the input and nulls a record the service rejects', async () => {
     const preClaimed = { status: 201, body: (request: { memories: Array<{ memoryId: string }> }) => ({
       created: [request.memories[0]!.memoryId, request.memories[2]!.memoryId],
       errors: [{ memoryId: request.memories[1]!.memoryId, type: '/errors/conflict', title: 'Conflict', status: 409 }],
@@ -141,7 +141,7 @@ describe('idempotency', () => {
       idempotencyKey: 'retry-5', memories: [{ text: 'A.' }, { text: 'B.' }, { text: 'C.' }],
     });
     const sent = requests[0]!.body.memories.map((record: { memoryId: string }) => record.memoryId);
-    expect(result.memoryIds).toEqual([sent[0], sent[2]]);
+    expect(result.memoryIds).toEqual([sent[0], null, sent[2]]);
     expect(result.errors).toEqual([expect.objectContaining({ memoryId: sent[1], status: 409 })]);
   });
 

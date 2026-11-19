@@ -19,7 +19,7 @@
 * `create_document_ingestion` is refused under a fixed `namespaceId`.
 * The 1.0.0 ingestion record has no `ownerId`, so a toolset with a fixed `userId` or `namespaceId` reads an ingestion only after it has produced a memory in scope.
 * Ingestion hook status tools are refused under a fixed `namespaceId`.
-* **Breaking:** `create_memories` with an `idempotencyKey` derives memory IDs from the key and returns only the IDs the service created.
+* **Breaking:** `create_memories` with an `idempotencyKey` derives memory IDs from the key and returns `memoryIds` in input order with `null` for each record the service rejected.
 * A keyed `start_session` retry on an existing session returns the session's first event when `actorId`, role, text, and any `createdAt` match, because the store refuses a repeated `createSession` with HTTP 409. The first event is the earliest by the store's `systemTimestamp`, so a backdated append cannot displace it. Events tied for the earliest `systemTimestamp` are all candidates, and the retry returns the one that matches. It also refuses when a requested `namespaceId` differs from the session's.
 * Session event `idempotencyKey` descriptions no longer promise replay, because the store does not deduplicate session events by key. After an uncertain `add_session_event`, read `get_session_memory` before retrying.
 * **Breaking:** `ownerId` accepts 1 to 64 letters, digits, and `_+=.@-` except `.` and `..`, and `sessionId` accepts underscores, matching the SDK.

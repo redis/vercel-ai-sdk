@@ -273,7 +273,7 @@ A create record contains:
 The wrapper generates an ID for each create record.
 The agent does not supply an `id`.
 Without an `idempotencyKey`, the returned `memoryIds` array lists all generated IDs in input order, including any failed records.
-With an `idempotencyKey`, the IDs are derived from the key, so a retry replays the same request, and `memoryIds` lists only the records the service created.
+With an `idempotencyKey`, the IDs are derived from the key, so a retry replays the same request, and `memoryIds` keeps the input order and holds `null` for each record the service rejected, so a position always maps to its input record. The rejected record also appears in `errors`.
 In both cases `created` contains successful IDs and `errors` contains per-ID failures.
 Keep successful IDs for later retrieval, updates, and deletion.
 
