@@ -105,7 +105,7 @@ const configuredModel = {
 };
 const memory = createRedisAgentMemory({ ...connection, scope, model: configuredModel });
 assert(Object.isFrozen(memory));
-assert.deepEqual(Object.keys(memory), ['tools', 'model']);
+assert.deepEqual(Object.keys(memory), ['tools', 'model', 'verify']);
 const tools = memory.tools();
 for (const name of ['get_memory_context', 'add_session_event', 'get_memory', 'search_memories', 'create_memories']) {
   assert.equal(typeof tools[name]?.execute, 'function', name + ' must be executable');
@@ -148,6 +148,8 @@ import {
   type ConfiguredLanguageModel,
   type RedisAgentMemoryDiagnostic,
   type RedisAgentMemoryDiagnosticError,
+  type RedisAgentMemoryHealth,
+  type RedisAgentMemoryHealthStatus,
   type RedisAgentMemoryLimits,
   type RedisAgentMemoryModelOptions,
   type RedisAgentMemoryOptions,
@@ -188,6 +190,9 @@ const modelOptions: RedisAgentMemoryModelOptions = {
   onDiagnostic,
 };
 const memory = createRedisAgentMemory(factoryOptions);
+const verify: () => Promise<RedisAgentMemoryHealth> = memory.verify;
+const healthy: RedisAgentMemoryHealthStatus = 'HEALTHY';
+void [verify, healthy];
 const tools: ToolSet = memory.tools();
 const requestModel = memory.model(modelOptions);
 const overridden = memory.model({ ...modelOptions, model: otherModel });

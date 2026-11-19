@@ -380,9 +380,22 @@ type ModelCallWithoutDefault = (
   options: RedisAgentMemoryModelOptions & { model: ConfiguredLanguageModel },
 ) => RedisAgentMemoryModel;
 
+/** Later service versions may report statuses not listed here. */
+export type RedisAgentMemoryHealthStatus = 'HEALTHY' | 'DEGRADED' | 'UNAVAILABLE' | (string & {});
+
+export type RedisAgentMemoryHealth = Readonly<{
+  status: RedisAgentMemoryHealthStatus;
+  features: Readonly<Record<string, Readonly<{ status: RedisAgentMemoryHealthStatus }>>>;
+}>;
+
 export type RedisAgentMemory<DefaultModel extends ConfiguredLanguageModel | undefined = undefined> = Readonly<{
   tools: (options?: RedisAgentMemoryToolsOptions) => RedisAgentMemoryTools;
   model: undefined extends DefaultModel ? ModelCallWithoutDefault : ModelCallWithDefault;
+  /**
+   * Check the store's health with the configured URL, store ID, and API key.
+   * Rejects with a RedisAgentMemoryToolError when the store cannot be reached or refuses the credentials.
+   */
+  verify: () => Promise<RedisAgentMemoryHealth>;
 }>;
 
 /**
@@ -433,6 +446,15 @@ export function createRedisAgentMemory<DefaultModel extends ConfiguredLanguageMo
         : copyMemoryScope(callOptions.scope);
       const { model: _model, ...requestOptions } = callOptions;
       return createRedisAgentMemoryModel(client, selectedModel, { ...requestOptions, scope });
+    },
+    async verify() {
+      let health: Awaited<ReturnType<typeof client.storeHealth>>;
+      try { health = await client.storeHealth({}, { retries: { strategy: 'none' } }); }
+      catch (error) { throw sanitizeMemoryError(error); }
+      const features = Object.fromEntries(Object.entries(health.features ?? {}).map(
+        ([name, feature]) => [name, Object.freeze({ status: feature.status })],
+      ));
+      return Object.freeze({ status: health.status, features: Object.freeze(features) });
     },
   };
   return Object.freeze(memory) as RedisAgentMemory<DefaultModel>;

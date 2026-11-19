@@ -191,4 +191,45 @@ describe('createRedisAgentMemory', () => {
     expect(requests[0]).not.toHaveProperty('filter.sessionId');
     expect(requests[0]).not.toHaveProperty('filter.namespaceId');
   });
+
+  describe('verify', () => {
+    it('returns the frozen store health for the configured store without retries', async () => {
+      const requests: Request[] = [];
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push(input instanceof Request ? input : new Request(input, init));
+        return Response.json({ status: 'DEGRADED', features: { search: { status: 'UNAVAILABLE' } } });
+      }));
+
+      const health = await createRedisAgentMemory(connection).verify();
+
+      expect(health).toEqual({ status: 'DEGRADED', features: { search: { status: 'UNAVAILABLE' } } });
+      expect(Object.isFrozen(health)).toBe(true);
+      expect(Object.isFrozen(health.features)).toBe(true);
+      expect(Object.isFrozen(health.features.search)).toBe(true);
+      expect(requests).toHaveLength(1);
+      expect(new URL(requests[0]!.url).pathname).toBe('/iris/data/v1/agent-memory/stores/store-1/health');
+    });
+
+    it('rejects a refused credential with a safe error and no retry', async () => {
+      const fetch = vi.fn(async () => Response.json(
+        { title: 'Unauthorized', detail: 'SENTINEL secret-key' }, { status: 401 },
+      ));
+      vi.stubGlobal('fetch', fetch);
+
+      const error = await createRedisAgentMemory(connection).verify().catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(RedisAgentMemoryToolError);
+      expect(error).toMatchObject({ code: 'IRIS_HTTP_401', statusCode: 401 });
+      expect(String((error as Error).message)).not.toMatch(/SENTINEL|secret-key/);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects an unreachable server with a safe error', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed: secret-key'); }));
+
+      await expect(createRedisAgentMemory(connection).verify()).rejects.toMatchObject({
+        code: 'IRIS_REQUEST_FAILED',
+      });
+    });
+  });
 });

@@ -97,7 +97,7 @@ describe('Redis Agent Memory model', () => {
     const created = createRedisAgentMemory(options);
     options.serverUrl = 'https://changed.example.test';
     expect(Object.isFrozen(created)).toBe(true);
-    expect(Object.keys(created)).toEqual(['tools', 'model']);
+    expect(Object.keys(created)).toEqual(['tools', 'model', 'verify']);
     created.model({ scope: { userId: 'user-1', sessionId: 'session-1' }, assistantId: 'assistant-1' });
     expect(http.fetch).not.toHaveBeenCalled();
     expect(JSON.stringify(created)).not.toContain('secret-key');
