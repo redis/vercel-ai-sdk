@@ -216,6 +216,21 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
     return result;
   };
 
+  /**
+   * The store treats an idempotency key as store-wide, so two users whose models both pick a generic key would collide.
+   * Hashing the fixed scope and the request target into the key keeps retries identical and isolates everyone else.
+   */
+  function scopeIdempotencyKey(key: string, ...target: string[]): Promise<string>;
+  function scopeIdempotencyKey(key: string | undefined, ...target: string[]): Promise<string | undefined>;
+  async function scopeIdempotencyKey(key: string | undefined, ...target: string[]) {
+    if (key === undefined) return undefined;
+    const input = new TextEncoder().encode(JSON.stringify([
+      key, scope.userId ?? null, scope.sessionId ?? null, scope.namespaceId ?? null, target,
+    ]));
+    const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', input));
+    return Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
   const findStartEvent = async (
     sessionId: string,
     input: SessionEventInput,
@@ -280,7 +295,8 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
     throwIfAborted(requestSignal);
     onPostStatus?.('started');
     const { sessionId: _sessionId, ...eventFields } = placed;
-    const body = { ...eventFields, createdAt: input.createdAt ? new Date(input.createdAt) : new Date() };
+    const idempotencyKey = await scopeIdempotencyKey(input.idempotencyKey, sessionId ?? '');
+    const body = { ...eventFields, idempotencyKey, createdAt: input.createdAt ? new Date(input.createdAt) : new Date() };
     // createSession refuses an existing ID with 409; addSessionEvent appends and creates a missing session.
     const result = sessionId && !start
       ? await client.addSessionEvent(sessionId, body, requestOptions)
@@ -314,6 +330,7 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
     scopeSearch,
     searchLongTermMemory,
     searchPersonalMemories,
+    scopeIdempotencyKey,
     appendSessionEvent,
   });
 }

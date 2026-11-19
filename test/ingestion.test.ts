@@ -62,6 +62,7 @@ describe('create_document_ingestion', () => {
     const result = await run(tools, 'create_document_ingestion', submission);
     expect(client.createDocumentIngestion.mock.calls[0]![0]).toEqual({
       ...submission, content: Buffer.from(submission.content, 'utf8').toString('base64'), ownerId: 'user-1',
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
     expect(result).toEqual({ ingestionId: ING, status: expect.objectContaining({ processing: 'SUCCEEDED' }) });
   });

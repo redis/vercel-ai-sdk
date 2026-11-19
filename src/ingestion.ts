@@ -90,7 +90,10 @@ export function createIngestionTools(client: AgentMemory, ctx: ScopedMemory): To
       execute: async ({ content, ownerId, ...input }, { abortSignal }) => {
         if (scope.namespaceId !== undefined) fail('Document ingestion cannot be placed in the configured namespace.');
         const result = await client.createDocumentIngestion(
-          { ...input, content: toBase64(content), ownerId: ctx.resolveOwner(ownerId) },
+          {
+            ...input, content: toBase64(content), ownerId: ctx.resolveOwner(ownerId),
+            idempotencyKey: await ctx.scopeIdempotencyKey(input.idempotencyKey, input.documentId, input.revision),
+          },
           { signal: abortSignal },
         );
         submitted.add(result.result.ingestionId);

@@ -138,7 +138,7 @@ describe('idempotency', () => {
     const second = await run(tools({ userId: 'user-1' }), 'create_memories', input);
     expect(second.memoryIds).toEqual(first.memoryIds);
     expect(requests[0]!.body).toEqual(requests[1]!.body);
-    expect(requests[0]!.body).toMatchObject({ idempotencyKey: 'retry-1', memories: [{ memoryId: first.memoryIds[0] }] });
+    expect(requests[0]!.body).toMatchObject({ idempotencyKey: expect.stringMatching(/^[0-9a-f]{64}$/), memories: [{ memoryId: first.memoryIds[0] }] });
   });
 
   it('keeps keyed memoryIds aligned with the input and nulls a record the service rejects', async () => {
@@ -182,7 +182,7 @@ describe('idempotency', () => {
       memoryId: 'memory-1', changes: { text: 'Prefers tea.' }, expectedRevision: 'rev-3', idempotencyKey: 'retry-2',
     });
     expect(requests[0]!.method).toBe('PATCH');
-    expect(requests[0]!.body).toMatchObject({ text: 'Prefers tea.', expectedRevision: 'rev-3', idempotencyKey: 'retry-2' });
+    expect(requests[0]!.body).toMatchObject({ text: 'Prefers tea.', expectedRevision: 'rev-3', idempotencyKey: expect.stringMatching(/^[0-9a-f]{64}$/) });
   });
 
   it('passes the key through a session append', async () => {
@@ -195,7 +195,51 @@ describe('idempotency', () => {
       sessionId: 'session-1', actorId: 'agent-1', role: 'ASSISTANT', content: [{ text: 'Hi.' }],
       createdAt: timestamp, idempotencyKey: 'retry-3',
     });
-    expect(requests[0]!.body).toMatchObject({ idempotencyKey: 'retry-3', createdAt: timestamp });
+    expect(requests[0]!.body).toMatchObject({ idempotencyKey: expect.stringMatching(/^[0-9a-f]{64}$/), createdAt: timestamp });
+  });
+});
+
+describe('idempotency key scoping', () => {
+  const sentKey = async (
+    userId: string, name: string, input: Record<string, unknown>,
+    responses: Array<{ body?: any; status?: number }> = [created],
+  ) => {
+    const requests = transport(...responses);
+    await run(tools({ userId }), name, input);
+    return requests.at(-1)!.body.idempotencyKey as string;
+  };
+  const batch = { idempotencyKey: 'create-1', memories: [{ text: 'Likes tea.' }] };
+
+  it('sends different store keys for two users who pick the same key', async () => {
+    const first = await sentKey('user-1', 'create_memories', batch);
+    const second = await sentKey('user-2', 'create_memories', batch);
+    expect(first).toMatch(/^[0-9a-f]{64}$/);
+    expect(second).not.toBe(first);
+  });
+
+  it('sends the same store key when one user repeats an identical request', async () => {
+    const first = await sentKey('user-1', 'create_memories', batch);
+    const second = await sentKey('user-1', 'create_memories', batch);
+    expect(second).toBe(first);
+  });
+
+  it('sends different store keys for one key reused on two memories', async () => {
+    const update = (memoryId: string) => sentKey('user-1', 'update_memory', {
+      memoryId, changes: { text: 'Prefers tea.' }, idempotencyKey: 'edit-1',
+    }, [{ body: memory() }, { body: memory() }]);
+    expect(await update('memory-1')).not.toBe(await update('memory-2'));
+  });
+
+  it('sends different store keys for two users appending to the same session ID', async () => {
+    const event = {
+      eventId: 'event-1', sessionId: 'session-1', actorId: 'agent-1', role: 'ASSISTANT',
+      content: [{ text: 'Hi.' }], createdAt: timestamp, systemTimestamp: timestamp,
+    };
+    const append = (userId: string) => sentKey(userId, 'add_session_event', {
+      sessionId: 'session-1', actorId: 'agent-1', role: 'ASSISTANT', content: [{ text: 'Hi.' }],
+      createdAt: timestamp, idempotencyKey: 'append-1',
+    }, [{ body: { sessionId: 'session-1', ownerId: userId, events: [] } }, { status: 201, body: { event } }]);
+    expect(await append('user-1')).not.toBe(await append('user-2'));
   });
 });
 
@@ -210,7 +254,7 @@ describe('upsert_memory', () => {
     expect(requests[1]!.url.pathname).toBe(new URL(`${base}/memories/memory-9`).pathname);
     expect(requests[1]!.body).toEqual({
       text: 'Lives in Lisbon.', attributes: { city: 'Lisbon' }, ownerId: 'user-1',
-      sessionId: 'session-1', idempotencyKey: 'retry-4',
+      sessionId: 'session-1', idempotencyKey: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
   });
 

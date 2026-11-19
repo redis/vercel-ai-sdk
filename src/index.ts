@@ -196,7 +196,10 @@ function buildTools(
             checkedNamespaces.add(namespaceId);
           }
         }
-        const result = await client.bulkCreateLongTermMemories({ memories: records, idempotencyKey }, { signal: abortSignal });
+        const owners = [...new Set(records.map(record => record.ownerId))].sort();
+        const result = await client.bulkCreateLongTermMemories({
+          memories: records, idempotencyKey: await scoped.scopeIdempotencyKey(idempotencyKey, ...owners),
+        }, { signal: abortSignal });
         const all = records.map(record => record.memoryId);
         if (idempotencyKey === undefined) return { ...result, memoryIds: all };
         // Keyed IDs are guessable, so another owner may already hold one; never hand back an ID the service did not create.
@@ -235,7 +238,9 @@ function buildTools(
         if (scope.sessionId && changes.sessionId !== undefined && changes.sessionId !== scope.sessionId) fail('Cannot override session association.');
         const placed = place(changes);
         await assertPlacementOwner(placed, abortSignal);
-        return client.updateLongTermMemory(memoryId, { ...placed, expectedRevision, idempotencyKey }, { signal: abortSignal });
+        return client.updateLongTermMemory(memoryId, {
+          ...placed, expectedRevision, idempotencyKey: await scoped.scopeIdempotencyKey(idempotencyKey, memoryId),
+        }, { signal: abortSignal });
       },
     }),
     upsert_memory: tool({
@@ -253,7 +258,9 @@ function buildTools(
         if (scope.sessionId && sessionId !== scope.sessionId) fail('Cannot override session association.');
         const placed = { ...place(input), ownerId: resolveOwner(input.ownerId), sessionId };
         await assertPlacementOwner(placed, abortSignal);
-        return client.upsertLongTermMemory(memoryId, placed, { signal: abortSignal });
+        return client.upsertLongTermMemory(memoryId, {
+          ...placed, idempotencyKey: await scoped.scopeIdempotencyKey(input.idempotencyKey, memoryId),
+        }, { signal: abortSignal });
       },
     }),
     update_memory_fields: tool({
@@ -268,7 +275,9 @@ function buildTools(
         if (hasResourceScope) await assertMemory(memoryId, abortSignal);
         const placed = place(input);
         await assertPlacementOwner(placed, abortSignal);
-        await client.updateLongTermMemoryFields(memoryId, placed, { signal: abortSignal });
+        await client.updateLongTermMemoryFields(memoryId, {
+          ...placed, idempotencyKey: await scoped.scopeIdempotencyKey(input.idempotencyKey, memoryId),
+        }, { signal: abortSignal });
         return { updated: true, memoryId };
       },
     }),

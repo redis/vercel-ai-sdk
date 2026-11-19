@@ -284,7 +284,10 @@ Text accepts 1–50,000 characters; topics accept up to 50 tags.
 ### Retries and idempotency keys
 
 `start_session`, `add_session_event`, `create_memories`, `update_memory`, `upsert_memory`, and `update_memory_fields` accept an optional `idempotencyKey` of 1 to 255 characters.
-The tools pass it to Redis Agent Memory unchanged.
+The store treats a key as store-wide: on a live store, a second user reusing another user's key got HTTP 409.
+So the tools do not pass the key unchanged. They send a SHA-256 of the key, the fixed `userId`, `sessionId` and `namespaceId`, and the request target (the memory ID, the session ID, the memory owners of a batch, or the document ID and revision).
+Two users, or two targets, can use the same key without colliding, and an identical retry still sends the identical key.
+`create_document_ingestion` takes the same treatment.
 For memory writes, a retry that reuses the key with the identical request replays the saved result, and the same key with a different request fails with HTTP 409.
 A store that selects an input hook requires the key, and a write without it fails.
 
