@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+* **Breaking:** Requires Node.js 22.12 or newer, the first 22.x release that loads ESM through `require()`.
+* CommonJS projects can `require('@redis/vercel-ai-sdk')`. The exports map now has a `default` condition, as `ai` does.
+* Adds `memory.verify()`, which checks the store's health with the configured URL, store ID, and API key. It resolves with `{ status, features }` and rejects with a `RedisAgentMemoryToolError` when the store is unreachable or refuses the credentials. Use it at startup or in a readiness probe, since model and tool calls fail open.
+* Memory model failures now appear in the AI SDK `warnings`: read failures and timeouts, failed or oversized session writes, and assistant scope violations. Each entry names only the operation, outcome, and error code. The AI SDK logs warnings to the console by default, so a failing store is no longer silent. Set `globalThis.AI_SDK_LOG_WARNINGS = false` to opt out. A failed assistant write during streaming is still reported only through `onDiagnostic`.
+
 ## 0.3.0
 
 * **Breaking:** `actorId` follows the `ownerId` rule, as the store enforces. This applies to `start_session`, `add_session_event`, `createSessionEventHook`, and the model wrapper's `assistantId`. Longer or differently punctuated IDs now fail validation before any request.
