@@ -21,6 +21,7 @@ type ModelGenerateResult = Awaited<ReturnType<WrappedLanguageModel['doGenerate']
 type ModelStreamResult = Awaited<ReturnType<WrappedLanguageModel['doStream']>>;
 type ModelStreamPart = ModelStreamResult['stream'] extends ReadableStream<infer Part> ? Part : never;
 type ProviderMetadata = ModelGenerateResult['providerMetadata'];
+type ModelWarning = ModelGenerateResult['warnings'][number];
 
 type ModelScope = BaseScope & { userId: string };
 
@@ -94,6 +95,9 @@ const DEFAULT_LIMITS: Limits = {
   recordingChars: 100_000,
 };
 const MAX_QUERY_CHARS = 50_000;
+const WARNING_OUTCOMES: ReadonlySet<RedisAgentMemoryDiagnostic['outcome']> = new Set([
+  'failure', 'timeout', 'scope_violation', 'too_large',
+]);
 const MAX_EVENT_PART_CHARS = 50_000;
 // This fixed 34-UTF-16-unit outer framing is outside the independent session and memory section budgets.
 const CONTEXT_NOTICE = 'IRIS MEMORY CONTEXT MAY BE STALE.\n';
@@ -405,8 +409,18 @@ export function createRedisAgentMemoryModel(
   if (onDiagnostic !== undefined && typeof onDiagnostic !== 'function') {
     throw providerError('INVALID_CONFIGURATION', 'onDiagnostic must be a function.');
   }
+  let pendingWarnings: ModelWarning[] = [];
+  const takeWarnings = () => {
+    const taken = pendingWarnings;
+    pendingWarnings = [];
+    return taken;
+  };
   const diagnose = (event: RedisAgentMemoryDiagnostic) => {
     const safe = Object.freeze({ ...event, error: event.error ? Object.freeze({ ...event.error }) : undefined });
+    if (WARNING_OUTCOMES.has(event.outcome)) pendingWarnings.push({
+      type: 'other',
+      message: `Redis Agent Memory ${event.operation} ${event.outcome}${event.error ? ` (${event.error.code})` : ''}.`,
+    });
     try {
       const result = onDiagnostic?.(safe);
       if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
@@ -639,6 +653,7 @@ export function createRedisAgentMemoryModel(
       } catch (error) {
         active = false;
         activeSignal = undefined;
+        takeWarnings();
         throw error;
       }
     },
@@ -649,11 +664,14 @@ export function createRedisAgentMemoryModel(
         try { await recordAssistant(text, activeSignal); }
         catch { /* Output already exists; cancellation or persistence failure cannot replace it. */ }
         const providerMetadata = mergeProvenance(result.providerMetadata, activeContext);
-        return providerMetadata === result.providerMetadata ? result : { ...result, providerMetadata };
+        const warnings = takeWarnings();
+        if (providerMetadata === result.providerMetadata && warnings.length === 0) return result;
+        return { ...result, providerMetadata, warnings: [...result.warnings, ...warnings] };
       } finally {
         active = false;
         activeSignal = undefined;
         activeContext = undefined;
+        takeWarnings();
       }
     },
     wrapStream: async ({ doStream }) => {
@@ -663,6 +681,7 @@ export function createRedisAgentMemoryModel(
         active = false;
         activeSignal = undefined;
         activeContext = undefined;
+        takeWarnings();
         throw error;
       }
       const source = result.stream;
@@ -681,6 +700,8 @@ export function createRedisAgentMemoryModel(
         active = false;
         activeSignal = undefined;
         activeContext = undefined;
+        // The assistant write ends after stream-start, so its failures reach only onDiagnostic.
+        takeWarnings();
       };
       const stream = new ReadableStream<ModelStreamPart>({
         start(controller) {
@@ -697,6 +718,11 @@ export function createRedisAgentMemoryModel(
                 const part = next.value;
                 if (part.type === 'finish') {
                   finish = part;
+                  continue;
+                }
+                if (part.type === 'stream-start') {
+                  const warnings = takeWarnings();
+                  controller.enqueue(warnings.length === 0 ? part : { ...part, warnings: [...part.warnings, ...warnings] });
                   continue;
                 }
                 controller.enqueue(part);

@@ -109,7 +109,10 @@ Never combine automatic recording with session hooks or model-callable session-w
 For streaming, nonterminal parts pass through as produced.
 Recording follows raw provider finish plus normal source close, and the terminal finish is held only for the bounded save.
 Cancellation or transport failure before raw completion prevents the assistant write where possible; an accepted POST cannot be rolled back.
-Memory failures are exposed through the optional content-free `onDiagnostic` callback and do not replace successful model output.
+Memory failures do not replace successful model output.
+Read failures, timeouts, failed or oversized session writes, and assistant scope violations are added to the AI SDK `warnings` as content-free `{ type: 'other' }` entries. The AI SDK logs warnings to the console unless `globalThis.AI_SDK_LOG_WARNINGS` is `false` or a custom logger.
+A streamed assistant write finishes after `stream-start` has been sent, so its failure reaches only `onDiagnostic`.
+The optional `onDiagnostic` callback receives every outcome, including successes, as a structured, content-free event.
 Scope violations remain hard failures.
 
 ## Runnable demos
