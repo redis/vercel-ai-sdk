@@ -224,6 +224,35 @@ describe('createRedisAgentMemory', () => {
       expect(fetch).toHaveBeenCalledTimes(1);
     });
 
+    it('bounds the health request by timeoutMs, defaulting to the factory timeout', async () => {
+      const hang = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal ?? (_input instanceof Request ? _input.signal : undefined);
+        signal?.addEventListener('abort', () => reject(signal.reason));
+      }));
+      vi.stubGlobal('fetch', hang);
+      const memory = createRedisAgentMemory({ ...connection, timeoutMs: 200 });
+
+      const started = Date.now();
+      await expect(memory.verify({ timeoutMs: 10 })).rejects.toMatchObject({ code: 'IRIS_REQUEST_FAILED' });
+      const overridden = Date.now() - started;
+      await expect(memory.verify()).rejects.toMatchObject({ code: 'IRIS_REQUEST_FAILED' });
+      const inherited = Date.now() - started - overridden;
+
+      expect(overridden).toBeLessThan(100);
+      expect(inherited).toBeGreaterThanOrEqual(180);
+      expect(hang).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])('rejects timeoutMs %s before any request', async timeoutMs => {
+      const fetch = vi.fn<typeof globalThis.fetch>();
+      vi.stubGlobal('fetch', fetch);
+
+      await expect(createRedisAgentMemory(connection).verify({ timeoutMs })).rejects.toMatchObject({
+        code: 'INVALID_CONFIGURATION',
+      });
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
     it('rejects an unreachable server with a safe error', async () => {
       vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('fetch failed: secret-key'); }));
 

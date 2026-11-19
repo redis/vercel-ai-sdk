@@ -180,6 +180,7 @@ SDK defaults disable automatic retries, avoiding duplicate appends after uncerta
 Model and tool calls fail open, so a wrong URL, store ID, or API key otherwise goes unnoticed. Call `await memory.verify()` at startup or from a readiness probe.
 It requests the store's health with the configured connection and resolves with `{ status, features }`, where each status is `HEALTHY`, `DEGRADED`, or `UNAVAILABLE`.
 It rejects with a `RedisAgentMemoryToolError` when the server is unreachable or refuses the store ID or key, for example `IRIS_HTTP_401`, and does not retry.
+Pass `{ timeoutMs }` to bound the request more tightly than the factory's `timeoutMs`, for example `await memory.verify({ timeoutMs: 2_000 })`.
 Whether `DEGRADED` should fail readiness is the application's decision.
 
 ## Development

@@ -150,6 +150,7 @@ import {
   type RedisAgentMemoryDiagnosticError,
   type RedisAgentMemoryHealth,
   type RedisAgentMemoryHealthStatus,
+  type RedisAgentMemoryVerifyOptions,
   type RedisAgentMemoryLimits,
   type RedisAgentMemoryModelOptions,
   type RedisAgentMemoryOptions,
@@ -190,9 +191,10 @@ const modelOptions: RedisAgentMemoryModelOptions = {
   onDiagnostic,
 };
 const memory = createRedisAgentMemory(factoryOptions);
-const verify: () => Promise<RedisAgentMemoryHealth> = memory.verify;
+const verifyOptions: RedisAgentMemoryVerifyOptions = { timeoutMs: 2_000 };
+const verify: (options?: RedisAgentMemoryVerifyOptions) => Promise<RedisAgentMemoryHealth> = memory.verify;
 const healthy: RedisAgentMemoryHealthStatus = 'HEALTHY';
-void [verify, healthy];
+void [verify, verifyOptions, healthy];
 const tools: ToolSet = memory.tools();
 const requestModel = memory.model(modelOptions);
 const overridden = memory.model({ ...modelOptions, model: otherModel });

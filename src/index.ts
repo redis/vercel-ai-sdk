@@ -388,6 +388,11 @@ export type RedisAgentMemoryHealth = Readonly<{
   features: Readonly<Record<string, Readonly<{ status: RedisAgentMemoryHealthStatus }>>>;
 }>;
 
+export interface RedisAgentMemoryVerifyOptions {
+  /** Health request timeout in milliseconds. Defaults to the factory's timeoutMs. Must be positive and finite. */
+  timeoutMs?: number;
+}
+
 export type RedisAgentMemory<DefaultModel extends ConfiguredLanguageModel | undefined = undefined> = Readonly<{
   tools: (options?: RedisAgentMemoryToolsOptions) => RedisAgentMemoryTools;
   model: undefined extends DefaultModel ? ModelCallWithoutDefault : ModelCallWithDefault;
@@ -395,7 +400,7 @@ export type RedisAgentMemory<DefaultModel extends ConfiguredLanguageModel | unde
    * Check the store's health with the configured URL, store ID, and API key.
    * Rejects with a RedisAgentMemoryToolError when the store cannot be reached or refuses the credentials.
    */
-  verify: () => Promise<RedisAgentMemoryHealth>;
+  verify: (options?: RedisAgentMemoryVerifyOptions) => Promise<RedisAgentMemoryHealth>;
 }>;
 
 /**
@@ -447,9 +452,12 @@ export function createRedisAgentMemory<DefaultModel extends ConfiguredLanguageMo
       const { model: _model, ...requestOptions } = callOptions;
       return createRedisAgentMemoryModel(client, selectedModel, { ...requestOptions, scope });
     },
-    async verify() {
+    async verify({ timeoutMs }: RedisAgentMemoryVerifyOptions = {}) {
+      if (timeoutMs !== undefined && !(Number.isFinite(timeoutMs) && timeoutMs > 0)) {
+        throw new RedisAgentMemoryToolError('INVALID_CONFIGURATION', 'timeoutMs must be positive.');
+      }
       let health: Awaited<ReturnType<typeof client.storeHealth>>;
-      try { health = await client.storeHealth({}, { retries: { strategy: 'none' } }); }
+      try { health = await client.storeHealth({}, { retries: { strategy: 'none' }, timeoutMs }); }
       catch (error) { throw sanitizeMemoryError(error); }
       const features = Object.fromEntries(Object.entries(health.features ?? {}).map(
         ([name, feature]) => [name, Object.freeze({ status: feature.status })],
