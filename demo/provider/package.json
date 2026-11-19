@@ -11,9 +11,9 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "4.0.65",
-    "ai": "7.0.114",
+    "@ai-sdk/anthropic": "4.0.106",
     "@redis/vercel-ai-sdk": "file:../..",
+    "ai": "7.0.177",
     "zod": "^4.1.8"
   }
 }

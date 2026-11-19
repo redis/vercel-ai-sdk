@@ -45,7 +45,7 @@ function setup(options: Partial<NamespaceToolOptions> = {}, records: Namespace[]
 async function run(tools: ToolSet, name: string, input: unknown, abortSignal?: AbortSignal): Promise<any> {
   const definition = tools[name];
   if (!definition?.execute) throw new Error(`Missing tool: ${name}`);
-  const schema = definition.inputSchema as { parseAsync(value: unknown): Promise<unknown> };
+  const schema = definition.inputSchema as unknown as { parseAsync(value: unknown): Promise<unknown> };
   return definition.execute(await schema.parseAsync(input), {
     toolCallId: 'namespace-test', messages: [], abortSignal, context: {},
   });

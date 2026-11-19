@@ -69,7 +69,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
-    "ai": "^7.0.114",
+    "ai": "^7.0.177",
     "typescript": "~5.9.3",
     "vitest": "^4.1.11",
     "zod": "^4.6.5"

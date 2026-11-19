@@ -43,7 +43,7 @@ function tools(scope: RedisAgentMemoryScope = {}): ToolSet {
 async function run(toolset: ToolSet, name: string, input: unknown): Promise<any> {
   const definition = toolset[name];
   if (!definition?.execute) throw new Error(`No executable tool named ${name}`);
-  const schema = definition.inputSchema as { parseAsync(input: unknown): Promise<unknown> };
+  const schema = definition.inputSchema as unknown as { parseAsync(input: unknown): Promise<unknown> };
   return definition.execute(await schema.parseAsync(input), { toolCallId: 'test-call', messages: [], context: {} });
 }
 

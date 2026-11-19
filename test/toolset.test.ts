@@ -60,7 +60,7 @@ function transport(...responses: Array<{ body: unknown; status?: number }>) {
 async function run(tools: ToolSet, name: string, input: unknown, abortSignal?: AbortSignal): Promise<any> {
   const definition = tools[name];
   if (!definition?.execute) throw new Error(`No executable tool named ${name}`);
-  const schema = definition.inputSchema as { parseAsync(input: unknown): Promise<unknown> };
+  const schema = definition.inputSchema as unknown as { parseAsync(input: unknown): Promise<unknown> };
   const parsed = await schema.parseAsync(input);
   return definition.execute(parsed, { toolCallId: 'test-call', messages: [], abortSignal, context: {} });
 }
