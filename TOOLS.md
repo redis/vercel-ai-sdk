@@ -255,6 +255,7 @@ The store enforces the same rule on every event's actor, so `createSessionEventH
 An `upsert_memory` ID accepts 1 to 64 letters, digits, underscores, or hyphens.
 `limit` accepts 1 to 100, except `list_sessions`, which accepts 1 to 1000.
 `start_session` fails when the named session already exists, except for a keyed retry that matches its first event.
+A keyed `start_session` requires both `sessionId` and `createdAt`. Without a `sessionId` the store would generate a second session on retry, and without `createdAt` the retry would not be the identical request.
 
 A create record contains:
 

@@ -245,6 +245,10 @@ export function createScopedMemory(client: AgentMemory, inputScope: RedisAgentMe
     const requestSignal = requestOptions.signal ?? undefined;
     const placed = place(input);
     const sessionId = input.sessionId ?? scope.sessionId;
+    if (start && input.idempotencyKey !== undefined) {
+      if (!sessionId) fail('A keyed start_session needs a sessionId, so a retry can find the session it created.');
+      if (input.createdAt === undefined) fail('A keyed start_session needs createdAt, so a retry sends the identical request.');
+    }
     let newSession = false;
     if (sessionId) {
       resolveSession(sessionId);

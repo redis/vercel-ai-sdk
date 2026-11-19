@@ -499,7 +499,7 @@ describe('RedisAgentMemory toolset', () => {
     const http = transport({ body: history }, { body: history });
     const tools = toolsWith(http.fetch, { userId: 'user-1' });
     await expect(run(tools, 'start_session', {
-      sessionId: 'session-1', actorId: 'user-1', text: 'Something else.', idempotencyKey: 'start-1',
+      sessionId: 'session-1', actorId: 'user-1', text: 'Something else.', createdAt: timestamp, idempotencyKey: 'start-1',
     })).rejects.toThrow(/first event differs/);
     expect(http.requests.map(({ request }) => request.method)).toEqual(['GET', 'GET']);
   });
@@ -508,7 +508,7 @@ describe('RedisAgentMemory toolset', () => {
     const http = transport({ body: { sessionId: 'session-1', ownerId: 'another-user', events: [] } });
     const tools = toolsWith(http.fetch, { userId: 'user-1' });
     await expect(run(tools, 'start_session', {
-      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', idempotencyKey: 'start-1',
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', createdAt: timestamp, idempotencyKey: 'start-1',
     })).rejects.toThrow(/outside the configured user scope/);
     expect(http.requests.map(({ request }) => request.method)).toEqual(['GET']);
   });
@@ -543,7 +543,7 @@ describe('RedisAgentMemory toolset', () => {
     const http = transport({ body: history }, { body: history });
     const tools = toolsWith(http.fetch, { userId: 'user-1' });
     await expect(run(tools, 'start_session', {
-      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', idempotencyKey: 'start-1', namespaceId: 'other',
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', createdAt: timestamp, idempotencyKey: 'start-1', namespaceId: 'other',
     })).rejects.toThrow(/different namespace/);
   });
 
@@ -552,9 +552,27 @@ describe('RedisAgentMemory toolset', () => {
     const http = transport({ body: history }, { body: history });
     const tools = toolsWith(http.fetch, { userId: 'user-1' });
     const result = await run(tools, 'start_session', {
-      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', idempotencyKey: 'start-1', namespaceId: 'notes-1',
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', createdAt: timestamp, idempotencyKey: 'start-1', namespaceId: 'notes-1',
     });
     expect(result.event.eventId).toBe('event-1');
+  });
+
+  it('refuses a keyed start_session without a sessionId before any request, since a retry would create a second session', async () => {
+    const http = transport();
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    await expect(run(tools, 'start_session', {
+      actorId: 'user-1', text: 'Hello.', createdAt: timestamp, idempotencyKey: 'start-1',
+    })).rejects.toThrow(/needs a sessionId/);
+    expect(http.requests).toHaveLength(0);
+  });
+
+  it('refuses a keyed start_session without createdAt before any request', async () => {
+    const http = transport();
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    await expect(run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', idempotencyKey: 'start-1',
+    })).rejects.toThrow(/needs createdAt/);
+    expect(http.requests).toHaveLength(0);
   });
 
   it('refuses an unkeyed start_session on an existing session', async () => {

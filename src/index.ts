@@ -115,10 +115,10 @@ function buildTools(
       }),
     }),
     start_session: tool({
-      description: 'Start a conversation with the user’s first event. Redis Agent Memory generates and returns a session ID when none is provided. Retain the returned ID. Fails when the named session already exists. With idempotencyKey, a retry whose actorId, text, and createdAt match the session’s first event returns that event instead.',
+      description: 'Start a conversation with the user’s first event. Redis Agent Memory generates and returns a session ID when none is provided. Retain the returned ID. Fails when the named session already exists. With idempotencyKey, supply sessionId and createdAt too; a retry whose actorId, text, and createdAt match the session’s first event returns that event instead.',
       inputSchema: z.object({
         sessionId: s.sessionId.optional(), actorId: s.actorId, text: s.text,
-        createdAt: s.timestamp.optional().describe('ISO 8601 timestamp; defaults to the current time. Supply it with idempotencyKey so a retry sends the identical request.'),
+        createdAt: s.timestamp.optional().describe('ISO 8601 timestamp; defaults to the current time. Required with idempotencyKey, so a retry sends the identical request.'),
         idempotencyKey: s.sessionIdempotencyKey.optional(), ...s.placement,
       }),
       execute: (input, { abortSignal }) => append({ ...input, role: 'USER', content: [{ text: input.text }] }, abortSignal, true),
