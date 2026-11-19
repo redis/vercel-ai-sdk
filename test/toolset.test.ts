@@ -527,6 +527,26 @@ describe('RedisAgentMemory toolset', () => {
     expect(result.event.eventId).toBe('event-1');
   });
 
+  it('picks the earliest event by server time over a later USER event with identical content', async () => {
+    const later = event({ eventId: 'event-2', systemTimestamp: '2026-09-25T13:00:00.000Z' });
+    const history = { sessionId: 'session-1', ownerId: 'user-1', events: [later, event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    const result = await run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', createdAt: timestamp, idempotencyKey: 'start-1',
+    });
+    expect(result.event.eventId).toBe('event-1');
+  });
+
+  it('refuses a keyed start_session retry whose createdAt differs from the first event', async () => {
+    const history = { sessionId: 'session-1', ownerId: 'user-1', events: [event()] };
+    const http = transport({ body: history }, { body: history });
+    const tools = toolsWith(http.fetch, { userId: 'user-1' });
+    await expect(run(tools, 'start_session', {
+      sessionId: 'session-1', actorId: 'user-1', text: 'Hello.', createdAt: '2026-09-25T12:34:57.000Z', idempotencyKey: 'start-1',
+    })).rejects.toThrow(/first event differs/);
+  });
+
   it('returns the matching event when the creation event and a later append share a server timestamp', async () => {
     const append = event({ eventId: 'event-2', actorId: 'assistant-1', role: 'ASSISTANT' });
     const history = { sessionId: 'session-1', ownerId: 'user-1', events: [append, event()] };
