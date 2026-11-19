@@ -1,6 +1,6 @@
 # Contributing
 
-Use Node.js 22 or newer and npm. With nvm, run `nvm use` first.
+Use Node.js 22.12 or newer and npm. With nvm, run `nvm use` first.
 
 ```sh
 npm ci

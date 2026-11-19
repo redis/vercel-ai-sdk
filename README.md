@@ -23,8 +23,8 @@ The approaches may coexist, but do not enable automatic model recording and sess
 
 ## Installation
 
-Requires Node.js 22+, AI SDK 7.0.114+ (7.x), and Zod 4.1.8+ (4.x).
-This is a server-side, ESM-only package with TypeScript declarations.
+Requires Node.js 22.12+, AI SDK 7.0.114+ (7.x), and Zod 4.1.8+ (4.x).
+This is a server-side ESM package with TypeScript declarations. CommonJS projects can load it with `require()`.
 
 ```sh
 npm install @redis/vercel-ai-sdk

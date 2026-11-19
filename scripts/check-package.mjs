@@ -133,6 +133,14 @@ console.log('Verified installed ESM unified factory construction without network
 `);
   run([join(consumer, 'runtime.mjs')]);
 
+  writeFileSync(join(consumer, 'runtime.cjs'), `
+const assert = require('node:assert/strict');
+const { createRedisAgentMemory } = require(${packageName});
+assert.equal(typeof createRedisAgentMemory, 'function');
+console.log('Verified CommonJS require() of the package root.');
+`);
+  run([join(consumer, 'runtime.cjs')]);
+
   writeFileSync(join(consumer, 'consumer.ts'), `
 import { ToolLoopAgent, isStepCount, wrapLanguageModel, type ToolSet } from 'ai';
 import {
