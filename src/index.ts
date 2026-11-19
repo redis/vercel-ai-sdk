@@ -156,6 +156,7 @@ function buildTools(
         if (scope.sessionId) {
           if (input.ownerId && scope.userId && input.ownerId !== scope.userId) fail('Cannot override user scope.');
           const session = await assertSession(scope.sessionId, abortSignal);
+          if (input.ownerId && session.ownerId !== input.ownerId) return { items: [] };
           if (namespaceId && session.namespaceId !== namespaceId) return { items: [] };
           return { items: [{ sessionId: session.sessionId, ownerId: session.ownerId, namespaceId: session.namespaceId }] };
         }

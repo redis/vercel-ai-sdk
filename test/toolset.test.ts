@@ -267,6 +267,14 @@ describe('RedisAgentMemory toolset', () => {
     expect((await run(tools, 'list_sessions', { namespaceId: 'notes-1' })).items).toHaveLength(1);
   });
 
+  it('applies an owner filter to a fixed session', async () => {
+    const session = { sessionId: 'session-1', ownerId: 'user-1', namespaceId: 'notes-1', events: [] };
+    const http = transport({ body: session }, { body: session });
+    const tools = toolsWith(http.fetch, { sessionId: 'session-1' });
+    expect((await run(tools, 'list_sessions', { ownerId: 'user-2' })).items).toEqual([]);
+    expect((await run(tools, 'list_sessions', { ownerId: 'user-1' })).items).toHaveLength(1);
+  });
+
   it('uses the scoped user ID as the owner when listing sessions', async () => {
     const http = transport({ body: { items: [{ sessionId: 'session-1', ownerId: 'user-1' }] } });
     const tools = toolsWith(http.fetch, { userId: 'user-1' });

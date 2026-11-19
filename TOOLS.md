@@ -252,7 +252,6 @@ The three deletion tools below are exposed only when `options.allowDeletes` is `
 Session IDs accept 1 to 64 letters, digits, underscores, or hyphens.
 Owner IDs and actor IDs accept 1 to 64 letters, digits, and `_+=.@-`, except `.` and `..`, so `user_42` and `alice@example.com` are valid.
 The store enforces the same rule on every event's actor, so `createSessionEventHook`'s `actorId` and the model wrapper's `assistantId` follow it too.
-Actor IDs accept 1 to 255 characters.
 An `upsert_memory` ID accepts 1 to 64 letters, digits, underscores, or hyphens.
 `limit` accepts 1 to 100, except `list_sessions`, which accepts 1 to 1000.
 `start_session` fails when the named session already exists, except for a keyed retry that matches its first event.
