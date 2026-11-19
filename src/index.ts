@@ -78,9 +78,12 @@ export type RedisAgentMemoryTools = ToolSet & {
 
 function fail(message: string): never { throw new RedisAgentMemoryToolError('INVALID_SCOPE', message); }
 
-/** A replayed idempotent batch must carry the same memory IDs, or the server rejects it as a different request. */
-async function retryStableMemoryId(idempotencyKey: string, ownerId: string, index: number): Promise<string> {
-  const input = new TextEncoder().encode(JSON.stringify([idempotencyKey, ownerId, index]));
+/**
+ * A replayed idempotent batch must carry the same memory IDs, or the server rejects it as a different request.
+ * Deriving them from the scoped request key keeps their uniqueness scope equal to the key's.
+ */
+async function retryStableMemoryId(scopedKey: string, index: number): Promise<string> {
+  const input = new TextEncoder().encode(JSON.stringify([scopedKey, index]));
   const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', input));
   return Array.from(digest.subarray(0, 16), byte => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -180,14 +183,17 @@ function buildTools(
       description: 'Create up to 100 durable memories in one batch. IDs are generated automatically; do not supply them. Use the user ID as ownerId; fixed scope.userId supplies it automatically. created and errors report per-record outcomes. Without idempotencyKey each call generates new IDs and memoryIds lists them all in input order, so reconcile uncertain writes before retrying. With idempotencyKey, a retry of the identical request replays the saved result with the same IDs, and memoryIds stays aligned with the input, holding null for a record the service rejected; that record also appears in errors.',
       inputSchema: z.object({ memories: z.array(s.memory).min(1).max(100), idempotencyKey: s.idempotencyKey.optional() }),
       execute: async ({ memories, idempotencyKey }, { abortSignal }) => {
-        const records = await Promise.all(memories.map(async (memory, index) => {
+        const placed = memories.map(memory => {
           const sessionId = memory.sessionId ?? scope.sessionId;
           if (scope.sessionId && sessionId !== scope.sessionId) fail('Cannot override session association.');
-          const ownerId = resolveOwner(memory.ownerId);
-          const memoryId = idempotencyKey === undefined
-            ? globalThis.crypto.randomUUID() : await retryStableMemoryId(idempotencyKey, ownerId, index);
-          return { ...place(memory), memoryId, ownerId, sessionId };
-        }));
+          return { ...place(memory), ownerId: resolveOwner(memory.ownerId), sessionId };
+        });
+        const owners = [...new Set(placed.map(record => record.ownerId))].sort();
+        const scopedKey = await scoped.scopeIdempotencyKey(idempotencyKey, ...owners);
+        const records = await Promise.all(placed.map(async (record, index) => ({
+          ...record,
+          memoryId: scopedKey === undefined ? globalThis.crypto.randomUUID() : await retryStableMemoryId(scopedKey, index),
+        })));
         const checkedNamespaces = new Set<string>();
         for (const record of records) {
           const namespaceId = record.namespaceId;
@@ -196,9 +202,8 @@ function buildTools(
             checkedNamespaces.add(namespaceId);
           }
         }
-        const owners = [...new Set(records.map(record => record.ownerId))].sort();
         const result = await client.bulkCreateLongTermMemories({
-          memories: records, idempotencyKey: await scoped.scopeIdempotencyKey(idempotencyKey, ...owners),
+          memories: records, idempotencyKey: scopedKey,
         }, { signal: abortSignal });
         const all = records.map(record => record.memoryId);
         if (idempotencyKey === undefined) return { ...result, memoryIds: all };

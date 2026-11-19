@@ -168,6 +168,18 @@ describe('idempotency', () => {
     expect(new Set([...base, ...otherKey, ...otherOwner]).size).toBe(6);
   });
 
+  it('derives different IDs for the same key and owner under different fixed scopes', async () => {
+    const requests = transport(created, created, created, created);
+    const ids = async (scope: Record<string, string>) => {
+      await run(tools(scope), 'create_memories', { idempotencyKey: 'retry-1', memories: [{ text: 'A.', ownerId: 'user-1' }] });
+      return requests.at(-1)!.body.memories[0].memoryId as string;
+    };
+    const all = [
+      await ids({}), await ids({ namespaceId: 'notes-1' }), await ids({ namespaceId: 'notes-2' }), await ids({ sessionId: 'session-1' }),
+    ];
+    expect(new Set(all).size).toBe(4);
+  });
+
   it('generates fresh IDs for unkeyed batches', async () => {
     transport(created, created);
     const input = { memories: [{ text: 'Likes tea.', ownerId: 'user-1' }] };
