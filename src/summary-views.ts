@@ -101,6 +101,20 @@ export function createSummaryViewTools(
     return view.visibility === 'SHARED' ? 'view' : level;
   }
 
+  /** A definition that spans several users or namespaces names the others, so a scoped caller sees only its own value. */
+  function redact(view: SummaryView): SummaryView {
+    if (!ctx.hasResourceScope || view.filter === undefined) return view;
+    const filter: LongTermMemoryFilter = { ...view.filter };
+    for (const [field, value] of fixed) {
+      const condition = filter[field];
+      if (condition === undefined) continue;
+      if (condition.eq !== undefined) filter[field] = { eq: condition.eq };
+      else if (condition.in !== undefined) filter[field] = { in: [value] };
+      else delete filter[field];
+    }
+    return { ...view, filter };
+  }
+
   async function assertView(id: string, needed: Exclude<Access, 'none'>, signal?: AbortSignal): Promise<SummaryView> {
     const view = await client.getSummaryView(id, { signal });
     const level = access(view);
@@ -138,16 +152,16 @@ export function createSummaryViewTools(
       inputSchema: z.object({ ...s.page }),
       execute: async ({ limit, cursor }, { abortSignal }) => {
         const result = await client.listSummaryViews(limit, cursor, { signal: abortSignal });
-        return { ...result, items: result.items.filter(view => access(view) !== 'none') };
+        return { ...result, items: result.items.filter(view => access(view) !== 'none').map(redact) };
       },
     }),
 
     get_summary_view: tool({
       description:
         'Get one Summary View definition with its filter, groupBy, output, refresh policy, state, and definitionVersion. ' +
-        'With a fixed user or namespace, views outside that user or namespace are refused. A SHARED view inside them can be read.',
+        'With a fixed user or namespace, views outside that user or namespace are refused, and other users and namespaces are left out of the filter. A SHARED view inside them can be read.',
       inputSchema: z.object({ viewId }),
-      execute: ({ viewId: id }, { abortSignal }) => assertView(id, 'view', abortSignal),
+      execute: async ({ viewId: id }, { abortSignal }) => redact(await assertView(id, 'view', abortSignal)),
     }),
 
     create_summary_view: tool({

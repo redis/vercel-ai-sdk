@@ -552,6 +552,8 @@ A toolset without a fixed user or namespace has full access to every view.
 
 A view's `ownerId` is the API caller, so the tools prove access from the view's `filter` and `groupBy`.
 A fixed field is pinned when the view's filter contains exactly `{eq: <fixed value>}` for it, and the filter is conjunctive.
+`get_summary_view` and `list_summary_views` leave other users and namespaces out of the filter they return. An `in` list shrinks to the fixed value, and `ne` or `all` conditions on a fixed field are dropped.
+The filter on other fields, such as `sessionId`, is returned as saved.
 A filter is conjunctive when `op` is `ALL`, or when `op` is omitted and the field is the filter's only condition.
 `userId` maps to the `ownerId` field, and `namespaceId` maps to the `namespaceId` field.
 

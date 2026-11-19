@@ -243,7 +243,27 @@ describe('get_summary_view_result', () => {
   it('keeps a grouped view whose filter lists the fixed owner among others', async () => {
     const listed = view({ viewId: 'listed', groupBy: ['ownerId'], filter: { ownerId: { in: ['user-1', 'user-2'] } } });
     const { tools } = setup({ userId: 'user-1' }, [listed]);
-    expect(await run(tools, 'get_summary_view', { viewId: 'listed' })).toEqual(listed);
+    expect(await run(tools, 'get_summary_view', { viewId: 'listed' })).toEqual({ ...listed, filter: { ownerId: { in: ['user-1'] } } });
+  });
+
+  it('leaves other users and namespaces out of the filter it returns from get and list', async () => {
+    const wide = view({
+      viewId: 'wide', groupBy: ['ownerId'], filter: { ownerId: { in: ['user-1', 'user-2'] }, topics: { eq: 'travel' } },
+    });
+    const notTwo = view({ viewId: 'not-two', groupBy: ['ownerId'], filter: { ownerId: { ne: 'user-2' }, topics: { eq: 'travel' } } });
+    const { tools } = setup({ userId: 'user-1' }, [wide, notTwo]);
+    expect((await run(tools, 'get_summary_view', { viewId: 'wide' })).filter)
+      .toEqual({ ownerId: { in: ['user-1'] }, topics: { eq: 'travel' } });
+    expect((await run(tools, 'get_summary_view', { viewId: 'not-two' })).filter).toEqual({ topics: { eq: 'travel' } });
+    expect((await run(tools, 'list_summary_views', {})).items.map((item: SummaryView) => item.filter)).toEqual([
+      { ownerId: { in: ['user-1'] }, topics: { eq: 'travel' } }, { topics: { eq: 'travel' } },
+    ]);
+  });
+
+  it('returns the whole filter to an unscoped toolset', async () => {
+    const wide = view({ viewId: 'wide', groupBy: ['ownerId'], filter: { ownerId: { in: ['user-1', 'user-2'] } } });
+    const { tools } = setup({}, [wide]);
+    expect(await run(tools, 'get_summary_view', { viewId: 'wide' })).toEqual(wide);
   });
 
   it('refuses a view outside the fixed owner', async () => {

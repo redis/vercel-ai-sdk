@@ -10,6 +10,7 @@
 * `search_memories`, `list_sessions`, and `list_namespaces` accept `sortBy` and `sortOrder`. `search_memories` sorts only without `query`.
 * `search_memories` accepts `excludeDocumentManaged`. `list_sessions` accepts a `namespaceId` filter.
 * `start_session`, `add_session_event`, `create_memories`, `update_memory`, `upsert_memory`, and `update_memory_fields` accept `idempotencyKey`. `start_session` also accepts `createdAt`.
+* With a fixed user or namespace, `get_summary_view` and `list_summary_views` no longer return the other users and namespaces a view's filter names.
 * The store shares an idempotency key across all callers, so the tools send a hash of the key, the fixed scope, and the request target. Two users who pick the same key no longer collide with HTTP 409, and an identical retry still replays.
 * `create_memories` with `idempotencyKey` derives deterministic memory IDs, so an identical retry replays the saved result.
 * `update_memory`, `upsert_memory`, and `update_memory_fields` accept `expectedRevision`.
