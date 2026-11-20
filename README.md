@@ -119,6 +119,7 @@ Scope violations remain hard failures.
 
 - [`demo/provider/`](demo/provider/) demonstrates the automatic-memory model approach.
 - [`demo/tools/`](demo/tools/) demonstrates the explicit tools and recording-hook approach.
+- [`demo/nextjs-support/`](demo/nextjs-support/) uses the automatic-memory model in a multi-customer Next.js app, with a custom memory type that staff can query across customers.
 
 Each demo has independent installation, test, and startup instructions and is excluded from npm releases.
 
