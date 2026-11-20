@@ -709,6 +709,7 @@ export function createRedisAgentMemoryModel(
           void (async () => {
             let finish: Extract<ModelStreamPart, { type: 'finish' }> | undefined;
             let failed = false;
+            let started = false;
             let text = '';
             const bufferLimit = remainingRecordingChars + 1;
             try {
@@ -716,13 +717,17 @@ export function createRedisAgentMemoryModel(
                 const next = await reader.read();
                 if (next.done) break;
                 const part = next.value;
+                if (!started) {
+                  started = true;
+                  const warnings = takeWarnings();
+                  if (part.type === 'stream-start') {
+                    controller.enqueue(warnings.length === 0 ? part : { ...part, warnings: [...part.warnings, ...warnings] });
+                    continue;
+                  }
+                  if (warnings.length > 0) controller.enqueue({ type: 'stream-start', warnings });
+                }
                 if (part.type === 'finish') {
                   finish = part;
-                  continue;
-                }
-                if (part.type === 'stream-start') {
-                  const warnings = takeWarnings();
-                  controller.enqueue(warnings.length === 0 ? part : { ...part, warnings: [...part.warnings, ...warnings] });
                   continue;
                 }
                 controller.enqueue(part);

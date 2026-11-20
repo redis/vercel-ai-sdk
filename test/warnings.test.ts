@@ -89,6 +89,25 @@ describe('memory failures in AI SDK warnings', () => {
     ]);
   });
 
+  it('streamText reports pre-inference failures when the upstream stream has no stream-start', async () => {
+    transport({ search: 503 });
+    const base = new MockLanguageModelV4({ doStream: async () => ({
+      stream: convertArrayToReadableStream([
+        { type: 'text-start' as const, id: 'answer' },
+        { type: 'text-delta' as const, id: 'answer', delta: 'Answer.' },
+        { type: 'text-end' as const, id: 'answer' },
+        { type: 'finish' as const, finishReason: { unified: 'stop' as const, raw: 'stop' }, usage },
+      ]),
+    }) });
+
+    const result = streamText({ model: memoryModel(base), prompt: 'Question.' });
+
+    expect(await result.text).toBe('Answer.');
+    expect(await result.warnings).toEqual([
+      { type: 'other', message: 'Redis Agent Memory memory.search failure (IRIS_HTTP_503).' },
+    ]);
+  });
+
   it('streamText leaves a failed ASSISTANT write to onDiagnostic because stream-start has already been sent', async () => {
     transport({ ASSISTANT: 500 });
     const diagnostics: RedisAgentMemoryDiagnostic[] = [];
