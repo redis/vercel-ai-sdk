@@ -13,13 +13,15 @@ to verify runtime exports and TypeScript declarations. The package check needs
 access to the npm registry/cache. Tests use mocked transports and models; no
 Redis or model credentials are needed and no live API calls are made.
 
-To run both demo suites after building the library:
+To run the demo suites after building the library:
 
 ```sh
 npm --prefix demo/tools ci
 npm --prefix demo/tools test
 npm --prefix demo/provider ci
 npm --prefix demo/provider test
+npm --prefix demo/nextjs-support ci
+npm --prefix demo/nextjs-support test
 ```
 
 Useful commands:
@@ -40,6 +42,7 @@ test/                Unit and integration tests with mocked HTTP/model boundarie
 scripts/             Package validation tooling
 demo/tools/          Tools-based terminal chat (private; excluded from npm releases)
 demo/provider/       Automatic-memory terminal chat (private; excluded from npm releases)
+demo/nextjs-support/ Multi-customer Next.js app with structured memory (private; excluded from npm releases)
 dist/                Generated JavaScript, declarations, and maps (not committed)
 ```
 
